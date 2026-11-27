@@ -276,24 +276,111 @@ public final class QuantumTerminalAccess {
         return true;
     }
 
-    /** Diagnosis only; callers have already rejected the action through their own authority predicate. */
-    public static String nativeDenialKey(ItemStack stack, World world, int x, int y, int z) {
+    /** First conversion of a native secured grid is management, regardless of either GTSWN switch. */
+    public static String conversionDenial(EntityPlayer player, World world, int x, int y, int z) {
         IGrid grid = gridAt(world, x, y, z);
-        if (grid == null) return "gtswn.chat.quantum.security_unavailable";
-        if (!isPairedToNativeGrid(stack, world, x, y, z)) return "gtswn.chat.quantum.pairing_mismatch";
+        if (grid == null) return QuantumSecurityFailure.NETWORK_NOT_READY.key();
+        int actor = AEApi.instance()
+            .registries()
+            .players()
+            .getID(player);
+        for (Class<? extends IGridHost> type : grid.getMachinesClasses()) {
+            if (!ISecurityProvider.class.isAssignableFrom(type)) continue;
+            for (IGridNode node : grid.getMachines(type)) {
+                if (!(node.getMachine() instanceof ISecurityProvider)) continue;
+                ISecurityProvider provider = (ISecurityProvider) node.getMachine();
+                QuantumSecurityFailure failure = conversionFailure(provider, actor);
+                if (failure != QuantumSecurityFailure.NONE) return failure.key();
+            }
+        }
+        return null;
+    }
+
+    static QuantumSecurityFailure conversionFailure(ISecurityProvider provider, int actor) {
+        if (!permitsSafetyProvider(provider, actor)) return QuantumSecurityFailure.SECURITY_REQUIRED;
+        return QuantumConnectionSecurity.permitsProvider(provider, actor) ? QuantumSecurityFailure.NONE
+            : QuantumSecurityFailure.BUILD_REQUIRED;
+    }
+
+    /** Native readiness is diagnosed before the held key: an absent station cannot re-encode an item. */
+    private static QuantumSecurityFailure providerFailure(IGrid grid) {
+        if (grid == null) return QuantumSecurityFailure.NETWORK_NOT_READY;
+        int count = 0;
+        for (Class<? extends IGridHost> type : grid.getMachinesClasses()) {
+            if (!ISecurityProvider.class.isAssignableFrom(type)) continue;
+            for (IGridNode node : grid.getMachines(type)) if (node.getMachine() instanceof ISecurityProvider) count++;
+        }
+        if (count == 0) return QuantumSecurityFailure.NO_PROVIDER;
+        if (count > 1) return QuantumSecurityFailure.MULTIPLE_PROVIDERS;
         ISecurityGrid security = grid.getCache(ISecurityGrid.class);
         return security == null || !security.isAvailable() || security.getOwner() < 0
-            ? "gtswn.chat.quantum.security_unavailable"
-            : "gtswn.chat.quantum.no_permission";
+            ? QuantumSecurityFailure.PROVIDER_UNAVAILABLE
+            : QuantumSecurityFailure.NONE;
+    }
+
+    /** Compact, non-authoritative UI state. 0 unknown, 1 ready, 2 absent, 3 multiple, 4 not ready. */
+    public static int securityStatus(World world, int x, int y, int z) {
+        switch (providerFailure(gridAt(world, x, y, z))) {
+            case NONE:
+                return 1;
+            case NO_PROVIDER:
+                return 2;
+            case MULTIPLE_PROVIDERS:
+                return 3;
+            default:
+                return 4;
+        }
+    }
+
+    /** Looking at a physical connection does not grant access to its remote network's identity or coordinates. */
+    public static boolean canInspectAnchor(EntityPlayer player, World world, int x, int y, int z) {
+        if (player == null || world == null || world.isRemote || !world.blockExists(x, y, z)) return false;
+        if (!isSecurityRequired(world, x, y, z)) return true;
+        if (permitsSafetyManagement(player, world, x, y, z)) return true;
+        IGrid grid = gridAt(world, x, y, z);
+        return providerFailure(grid) == QuantumSecurityFailure.NONE && grid.<ISecurityGrid>getCache(ISecurityGrid.class)
+            .hasPermission(player, SecurityPermissions.BUILD);
+    }
+
+    /** Diagnosis only; callers have already rejected the action through their own authority predicate. */
+    public static String nativeDenialKey(ItemStack stack, World world, int x, int y, int z) {
+        return nativeDenialKey(stack, world, x, y, z, false);
+    }
+
+    public static String nativeDenialKey(ItemStack stack, World world, int x, int y, int z, boolean management) {
+        IGrid grid = gridAt(world, x, y, z);
+        QuantumSecurityFailure readiness = providerFailure(grid);
+        if (readiness != QuantumSecurityFailure.NONE) return readiness.key();
+        if (stack == null || stack.getTagCompound() == null
+            || stack.getTagCompound()
+                .getString(NBT_ENCRYPTION_KEY)
+                .isEmpty())
+            return QuantumSecurityFailure.PAIRING_REQUIRED.key();
+        if (!isPairedToNativeGrid(stack, world, x, y, z)) return QuantumSecurityFailure.PAIRING_MISMATCH.key();
+        return (management ? QuantumSecurityFailure.SECURITY_REQUIRED : QuantumSecurityFailure.BUILD_REQUIRED).key();
+    }
+
+    public static String terminalDenialKey(EntityPlayer player, ItemStack stack, boolean management) {
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, management))
+            return com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter
+                .profileDenialKey(player, stack, management);
+        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
+        if (anchor == null) return "gtswn.chat.quantum.need_bind";
+        World world = DimensionManager.getWorld(anchor[0]);
+        if (world == null || !world.blockExists(anchor[1], anchor[2], anchor[3]))
+            return QuantumSecurityFailure.UNLOADED.key();
+        if (!currentBinding(stack, world, anchor)) return QuantumSecurityFailure.INVALID_TARGET.key();
+        return management ? recoveryDenialKey(world, anchor[1], anchor[2], anchor[3])
+            : nativeDenialKey(stack, world, anchor[1], anchor[2], anchor[3]);
     }
 
     /** A keyless recovery refusal concerns the current provider, never the held pairing. */
     public static String recoveryDenialKey(World world, int x, int y, int z) {
         IGrid grid = gridAt(world, x, y, z);
-        ISecurityGrid security = grid == null ? null : grid.getCache(ISecurityGrid.class);
-        return security == null || !security.isAvailable() || security.getOwner() < 0
-            ? "gtswn.chat.quantum.security_unavailable"
-            : "gtswn.chat.quantum.manage_permission_required";
+        if (grid == null) return QuantumSecurityFailure.NETWORK_NOT_READY.key();
+        return providerFailure(grid) == QuantumSecurityFailure.NO_PROVIDER
+            ? "gtswn.chat.quantum.controller_owner_required"
+            : QuantumSecurityFailure.SECURITY_REQUIRED.key();
     }
 
     public static boolean isSecurityRequired(World world, int x, int y, int z) {
@@ -331,15 +418,39 @@ public final class QuantumTerminalAccess {
     }
 
     public static boolean setNetworkSafety(EntityPlayer player, ItemStack stack, boolean enabled) {
-        if (!Config.quantumSafetyEnabled || !canChangeNetworkSafety(player, stack)) return false;
-        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
+        return changeNetworkSafety(player, stack, enabled) == null;
+    }
+
+    /** Null means committed; a refusal key is returned without changing policy or issuing a key. */
+    public static String changeNetworkSafety(EntityPlayer player, ItemStack stack, boolean enabled) {
+        if (!Config.quantumSafetyEnabled) return "gtswn.gui.quantum.safety_global_off";
+        if (!isTerminal(stack)) return "gtswn.chat.quantum.need_bind";
+        // Synchronization may update descriptive owner/binding cursors. A rejected button must not
+        // leak those preparation writes into the real held item.
+        ItemStack checked = stack.copy();
+        if (!canChangeNetworkSafety(player, checked)) return terminalDenialKey(player, checked, true);
+        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(checked);
         World world = DimensionManager.getWorld(anchor[0]);
+        if (enabled && !isNetworkSafetyEnabled(world, anchor[1], anchor[2], anchor[3])) {
+            QuantumSecurityFailure failure = QuantumSecurityPreflight
+                .inspect(world, members(world, anchor[1], anchor[2], anchor[3]))
+                .enablingFailure();
+            if (failure != QuantumSecurityFailure.NONE) return failure.key();
+        }
+        String pairing = enabled && !isPairedToNativeGrid(checked, world, anchor[1], anchor[2], anchor[3])
+            ? trustedPairingKey(player, world, members(world, anchor[1], anchor[2], anchor[3]))
+            : null;
         QuantumNetworkSecurityRegistry.get(world)
             .setSafety(world, members(world, anchor[1], anchor[2], anchor[3]), enabled);
+        stack.setTagCompound(checked.getTagCompound());
+        // This is an explicit manager action; do not require BUILD merely to manage the switch.
+        // Only a manager with native encoding authority also receives a repaired held key.
+        if (pairing != null) ((INetworkEncodable) stack.getItem()).setEncryptionKey(stack, pairing, null);
+        player.inventory.markDirty();
         QuantumNetworkData.clearCache();
         QuantumNetworkStatsCache.clear();
         QuantumConnectionSecurity.restoreNativeChecks();
-        return true;
+        return null;
     }
 
     static Set<Long> networkMembers(World world, int x, int y, int z) {

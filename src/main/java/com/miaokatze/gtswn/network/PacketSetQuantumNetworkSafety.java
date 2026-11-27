@@ -161,17 +161,32 @@ public final class PacketSetQuantumNetworkSafety implements IMessage {
                 if (context == null || context.token != message.token
                     || context.slot != message.slot
                     || !Arrays.equals(context.anchor, message.anchor)
-                    || !context.matches(player, held, message.identity)) return;
+                    || !context.matches(player, held, message.identity)) {
+                    feedback(player, message, "gtswn.chat.quantum.request_expired");
+                    return;
+                }
                 World world = DimensionManager.getWorld(message.anchor[0]);
                 if (world == null || !message.identity.equals(
                     QuantumTerminalAccess
-                        .networkSafetyIdentity(world, message.anchor[1], message.anchor[2], message.anchor[3])))
+                        .networkSafetyIdentity(world, message.anchor[1], message.anchor[2], message.anchor[3]))) {
+                    feedback(player, message, "gtswn.chat.quantum.request_expired");
                     return;
+                }
                 // This API independently rechecks global mode, native actor permissions and a live quantized anchor.
-                QuantumTerminalAccess.setNetworkSafety(player, held, message.enabled);
+                String refusal = QuantumTerminalAccess.changeNetworkSafety(player, held, message.enabled);
+                feedback(
+                    player,
+                    message,
+                    refusal != null ? refusal
+                        : message.enabled ? "gtswn.chat.quantum.safety_enabled" : "gtswn.chat.quantum.safety_disabled");
             } finally {
                 QuantumTerminalRequestQueue.enqueue(player);
             }
+        }
+
+        private static void feedback(EntityPlayerMP player, PacketSetQuantumNetworkSafety message, String key) {
+            com.miaokatze.gtswn.common.quantum.QuantumSecurityFeedback
+                .send(player, key, message.anchor[0], message.anchor[1], message.anchor[2], message.anchor[3]);
         }
     }
 

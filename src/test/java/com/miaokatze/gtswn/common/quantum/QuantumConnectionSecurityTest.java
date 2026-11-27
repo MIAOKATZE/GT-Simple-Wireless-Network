@@ -73,7 +73,8 @@ public class QuantumConnectionSecurityTest {
             IGridConnection quantum = trackedEdge(new TileEntityNetworkQuantumNode(), ordinary, quantumDestroyed);
             IGridConnection nativeEdge = trackedEdge(ordinary, ordinary, ordinaryDestroyed);
             Config.quantumSafetyEnabled = false;
-            QuantumConnectionSecurity.recordConnection(quantum);
+            // Legacy admitted edge: the tightened recovery policy no longer admits this unbound host.
+            QuantumConnectionSecurity.recordActual(quantum, true);
             QuantumConnectionSecurity.recordConnection(nativeEdge);
             Config.quantumSafetyEnabled = true;
             QuantumConnectionSecurity.restoreNativeChecks();
@@ -224,8 +225,10 @@ public class QuantumConnectionSecurityTest {
                 Config.quantumSafetyEnabled = true;
                 assertFalse(QuantumConnectionSecurity.bypassesNativeCheck(endpoint, ordinary));
                 Config.quantumSafetyEnabled = false;
-                assertTrue(QuantumConnectionSecurity.bypassesNativeCheck(endpoint, ordinary));
-                assertTrue(QuantumConnectionSecurity.bypassesNativeCheck(ordinary, endpoint));
+                assertFalse(
+                    "Recovery mode still requires a real local anchor scope",
+                    QuantumConnectionSecurity.bypassesNativeCheck(endpoint, ordinary));
+                assertFalse(QuantumConnectionSecurity.bypassesNativeCheck(ordinary, endpoint));
                 assertFalse(QuantumConnectionSecurity.bypassesNativeCheck(ordinary, ordinary));
                 Config.quantumSafetyEnabled = true;
                 assertFalse(QuantumConnectionSecurity.bypassesNativeCheck(endpoint, ordinary));

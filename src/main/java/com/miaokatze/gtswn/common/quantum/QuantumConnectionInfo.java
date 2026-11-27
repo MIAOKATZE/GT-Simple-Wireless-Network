@@ -14,6 +14,15 @@ public final class QuantumConnectionInfo {
     private QuantumConnectionInfo() {}
 
     public static void node(EntityPlayer player, TileEntityNetworkQuantumNode node) {
+        if (node.hasAnchor() && !QuantumTerminalAccess.canInspectAnchor(
+            player,
+            net.minecraftforge.common.DimensionManager.getWorld(node.getAnchorDim()),
+            node.getAnchorX(),
+            node.getAnchorY(),
+            node.getAnchorZ())) {
+            tell(player, "gtswn.chat.quantum.info.restricted");
+            return;
+        }
         tell(player, "gtswn.chat.quantum.info.node");
         position(player, node.xCoord, node.yCoord, node.zCoord);
         owner(player, node.getPlacerName(), node.getPlacerUUID());
@@ -26,11 +35,21 @@ public final class QuantumConnectionInfo {
 
     public static void incorporation(EntityPlayer player, QuantumIncorporationRegistry.Entry entry, int x, int y,
         int z) {
+        if (!QuantumTerminalAccess.canInspectAnchor(
+            player,
+            net.minecraftforge.common.DimensionManager.getWorld(entry.dim),
+            entry.ax,
+            entry.ay,
+            entry.az)) {
+            tell(player, "gtswn.chat.quantum.info.restricted");
+            return;
+        }
         tell(player, "gtswn.chat.quantum.info.incorporation");
         position(player, x, y, z);
         owner(player, entry.ownerName(), entry.owner());
+        tell(player, "gtswn.chat.quantum.info.native_owner", entry.connectionActorID());
         anchor(player, entry.dim, entry.ax, entry.ay, entry.az);
-        tell(player, entry.isConnected() ? "gtswn.chat.quantum.node_online" : "gtswn.chat.quantum.node_offline");
+        tell(player, entry.connectionStatusKey());
         tell(
             player,
             "gtswn.chat.quantum.info.incorporation_channels",

@@ -245,7 +245,24 @@ public final class TerminalGuiFactory implements UIFactory<GuiData> {
                             + (clientSnapshot == null ? "..." : clientSnapshot.networkSafetyEnabled ? "ON" : "OFF")))
                 .tooltip(
                     t -> t.addLine(IKey.lang("gtswn.gui.quantum.safety_scope"))
-                        .addLine(IKey.dynamic(() -> tr(safetyReason(clientSnapshot)))))
+                        .addLine(IKey.dynamic(() -> tr(safetyReason(clientSnapshot))))
+                        .addLine(
+                            IKey.dynamic(
+                                () -> tr(
+                                    clientSnapshot != null && clientSnapshot.globalSafetyEnabled
+                                        ? "gtswn.gui.quantum.safety_global_on"
+                                        : "gtswn.gui.quantum.safety_global_off")))
+                        .addLine(
+                            IKey.dynamic(
+                                () -> tr(
+                                    "gtswn.gui.quantum.station_status."
+                                        + (clientSnapshot == null ? 0 : clientSnapshot.nativeSecurityStatus))))
+                        .addLine(
+                            IKey.dynamic(
+                                () -> tr(
+                                    "gtswn.gui.quantum.pairing_status."
+                                        + (clientSnapshot == null ? 0 : clientSnapshot.pairingStatus))))
+                        .addLine(IKey.lang("gtswn.gui.quantum.safety_enable_effect")))
                 .onMousePressed(mouse -> {
                     QuantumNetworkData snapshot = clientSnapshot;
                     int[] anchor = ItemNetworkQuantumTerminal.getAnchor(player.getHeldItem());

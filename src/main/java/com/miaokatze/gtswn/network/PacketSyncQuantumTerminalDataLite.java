@@ -26,6 +26,7 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
     private boolean globalSafetyEnabled;
     private boolean canChangeNetworkSafety;
     private long networkSafetyRequestToken;
+    private int nativeSecurityStatus, pairingStatus;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketSyncQuantumTerminalDataLite() {}
@@ -37,10 +38,23 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
     /** Player capabilities belong to this response, never to the shared anchor cache. */
     public PacketSyncQuantumTerminalDataLite(QuantumNetworkData data, boolean globalSafetyEnabled,
         boolean canChangeNetworkSafety, long networkSafetyRequestToken) {
+        this(
+            data,
+            globalSafetyEnabled,
+            canChangeNetworkSafety,
+            networkSafetyRequestToken,
+            data.nativeSecurityStatus,
+            data.pairingStatus);
+    }
+
+    public PacketSyncQuantumTerminalDataLite(QuantumNetworkData data, boolean globalSafetyEnabled,
+        boolean canChangeNetworkSafety, long networkSafetyRequestToken, int nativeSecurityStatus, int pairingStatus) {
         this.data = data;
         this.globalSafetyEnabled = globalSafetyEnabled;
         this.canChangeNetworkSafety = canChangeNetworkSafety;
         this.networkSafetyRequestToken = networkSafetyRequestToken;
+        this.nativeSecurityStatus = nativeSecurityStatus;
+        this.pairingStatus = pairingStatus;
     }
 
     @Override
@@ -62,6 +76,8 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
         ByteBufUtils.writeUTF8String(buf, data.networkSafetyIdentity);
         buf.writeLong(networkSafetyRequestToken);
         buf.writeBoolean(data.managementOnly);
+        buf.writeByte(nativeSecurityStatus);
+        buf.writeByte(pairingStatus);
     }
 
     @Override
@@ -94,9 +110,14 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
                     if (d.networkSafetyIdentity.length() > 256) return;
                 }
                 if (buf.isReadable()) {
-                    if (buf.readableBytes() != 8 && buf.readableBytes() != 9) return;
+                    if (buf.readableBytes() != 8 && buf.readableBytes() != 9 && buf.readableBytes() != 11) return;
                     d.networkSafetyRequestToken = buf.readLong();
                     if (buf.isReadable()) d.managementOnly = bool(buf);
+                    if (buf.isReadable()) {
+                        d.nativeSecurityStatus = buf.readUnsignedByte();
+                        d.pairingStatus = buf.readUnsignedByte();
+                        if (d.nativeSecurityStatus > 4 || d.pairingStatus > 3) return;
+                    }
                 }
             }
             if (!buf.isReadable()) {
@@ -104,6 +125,8 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
                 globalSafetyEnabled = d.globalSafetyEnabled;
                 canChangeNetworkSafety = d.canChangeNetworkSafety;
                 networkSafetyRequestToken = d.networkSafetyRequestToken;
+                nativeSecurityStatus = d.nativeSecurityStatus;
+                pairingStatus = d.pairingStatus;
             }
         } catch (RuntimeException malformed) {
             data = null;

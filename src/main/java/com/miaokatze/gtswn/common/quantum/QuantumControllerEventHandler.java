@@ -164,6 +164,7 @@ public class QuantumControllerEventHandler {
         if (isEnergyRelatedItem(held)) {
             return;
         }
+        if (held != null && Block.getBlockFromItem(held.getItem()) instanceof appeng.block.misc.BlockSecurity) return;
         if (held != null && Block.getBlockFromItem(held.getItem()) instanceof BlockController) return;
         // 非能源相关物品/空手 → 全量拦截
         event.setCanceled(true);

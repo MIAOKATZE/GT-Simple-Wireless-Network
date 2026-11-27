@@ -46,13 +46,12 @@ public final class QuantumConnectionSecurity {
 
     public static boolean bypassesNativeCheck(IGridNode first, IGridNode second) {
         if (!isQuantumHost(first) && !isQuantumHost(second)) return false;
-        if (!Config.quantumSafetyEnabled) return true;
         return bypassesNativeCheck(first, second, new Context());
     }
 
     private static boolean bypassesNativeCheck(IGridNode first, IGridNode second, Context context) {
         if (!isQuantumHost(first) && !isQuantumHost(second)) return false;
-        return !Config.quantumSafetyEnabled || localOverride(first, second, context);
+        return localOverride(first, second, context);
     }
 
     public static void clearConnections() {
@@ -66,10 +65,9 @@ public final class QuantumConnectionSecurity {
      * are unchanged. ON/native ACL authorization is never retained by this shortcut.
      */
     public static boolean hasUnchangedOverride(IGridConnection first, IGridConnection second) {
-        if (!Config.quantumSafetyEnabled) return true;
         return first != null && second != null
             && restoredTracked
-            && restoredSafety
+            && restoredSafety == Config.quantumSafetyEnabled
             && restoredNativeRevision == QuantumSecurityTopology.current()
             && restoredPolicyEpoch == QuantumPolicyEpoch.current()
             && restoredStructureEpoch == QuantumTerminalSyncEpoch.current()
@@ -117,14 +115,19 @@ public final class QuantumConnectionSecurity {
     /** Native provider configuration remains authoritative even while its powered cache is booting. */
     public static boolean mayBridge(World anchorWorld, int x, int y, int z, IGridNode first, IGridNode second,
         IntSupplier actor) {
-        if (!Config.quantumSafetyEnabled) return true;
+        return bridgeFailure(anchorWorld, x, y, z, first, second, actor) == QuantumSecurityFailure.NONE;
+    }
+
+    public static QuantumSecurityFailure bridgeFailure(World anchorWorld, int x, int y, int z, IGridNode first,
+        IGridNode second, IntSupplier actor) {
         Context context = new Context();
-        if (localOverride(first, second, context)) return true;
+        if (localOverride(first, second, context)) return QuantumSecurityFailure.NONE;
         Set<ISecurityProvider> providers = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<IGrid> grids = Collections.newSetFromMap(new IdentityHashMap<>());
         collectProviders(first, grids, providers, context);
         collectProviders(second, grids, providers, context);
         Scope anchor = new Scope(anchorWorld, anchorWorld == null ? 0 : anchorWorld.provider.dimensionId, x, y, z);
+        if (allowsLocalScope(anchor, first, second, context)) return QuantumSecurityFailure.NONE;
         collectAnchorProviders(anchor, grids, providers, context);
         boolean required;
         long checkedRevision;
@@ -132,25 +135,30 @@ public final class QuantumConnectionSecurity {
         do {
             checkedRevision = context.nativeRevision;
             checkedGridCount = grids.size();
-            required = anchorWorld == null || context.safetyEnabled(anchor) || !providers.isEmpty();
+            required = anchorWorld == null || Config.quantumSafetyEnabled && context.safetyEnabled(anchor)
+                || !providers.isEmpty();
             for (Scope scope : context.scopes(grids)) {
-                if (scope.world == null) return false;
-                if (!context.safetyEnabled(scope)) continue;
+                if (scope.world == null) return QuantumSecurityFailure.UNLOADED;
+                if (!Config.quantumSafetyEnabled || !context.safetyEnabled(scope)) continue;
                 required = true;
                 Set<ISecurityProvider> known = Collections.newSetFromMap(new IdentityHashMap<>());
                 collectAnchorProviders(scope, Collections.newSetFromMap(new IdentityHashMap<>()), known, context);
-                if (known.isEmpty() && !sameAnchor(scope, anchorWorld, x, y, z)) return false;
+                if (known.isEmpty() && !sameAnchor(scope, anchorWorld, x, y, z))
+                    return QuantumSecurityFailure.NO_PROVIDER;
                 collectAnchorProviders(scope, grids, providers, context);
             }
             // A normal anchor lookup can merge/split grids or replace a provider while checking a scope.
             // Revisit the current scopes as well as rebuilding the provider inventory before authorizing.
         } while (checkedRevision != context.nativeRevision || checkedGridCount != grids.size());
-        if (!required) return true;
-        if (providers.size() != 1) return false;
+        if (!required) return QuantumSecurityFailure.NONE;
+        if (providers.isEmpty()) return QuantumSecurityFailure.NO_PROVIDER;
+        if (providers.size() != 1) return QuantumSecurityFailure.MULTIPLE_PROVIDERS;
+        int id = actor.getAsInt();
+        if (id < 0) return QuantumSecurityFailure.ACTOR_UNKNOWN;
         return permitsProvider(
             providers.iterator()
                 .next(),
-            actor.getAsInt());
+            id) ? QuantumSecurityFailure.NONE : QuantumSecurityFailure.BUILD_REQUIRED;
     }
 
     private static void collectProviders(IGridNode node, Set<IGrid> grids, Set<ISecurityProvider> providers,
@@ -187,10 +195,6 @@ public final class QuantumConnectionSecurity {
 
     /** Destroy every live edge admitted under the override before native authorization resumes. */
     public static void restoreNativeChecks() {
-        if (!Config.quantumSafetyEnabled) {
-            restoredSafety = false;
-            return;
-        }
         if (BYPASSED.isEmpty()) return;
         long nativeRevision = QuantumSecurityTopology.current();
         long policyEpoch = QuantumPolicyEpoch.current();
@@ -246,7 +250,6 @@ public final class QuantumConnectionSecurity {
     }
 
     public static boolean bypassesNetworkSafety(ItemStack terminal, IGridNode other) {
-        if (!Config.quantumSafetyEnabled) return true;
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(terminal);
         if (anchor == null) return false;
         Scope scope = new Scope(DimensionManager.getWorld(anchor[0]), anchor[0], anchor[1], anchor[2], anchor[3]);
@@ -255,8 +258,8 @@ public final class QuantumConnectionSecurity {
     }
 
     static boolean bypassesNetworkSafety(World world, int x, int y, int z, IGridNode first, IGridNode second) {
-        return !Config.quantumSafetyEnabled
-            || allowsLocalScope(new Scope(world, world.provider.dimensionId, x, y, z), first, second, new Context());
+        return world != null
+            && allowsLocalScope(new Scope(world, world.provider.dimensionId, x, y, z), first, second, new Context());
     }
 
     private static boolean localOverride(IGridNode first, IGridNode second, Context context) {
@@ -268,7 +271,7 @@ public final class QuantumConnectionSecurity {
 
     private static boolean allowsLocalScope(Scope own, IGridNode first, IGridNode second, Context context) {
         if (own.world == null || QuantumTerminalAccess.networkSafetyIdentity(own.world, own.x, own.y, own.z)
-            .isEmpty() || context.safetyEnabled(own)) return false;
+            .isEmpty() || Config.quantumSafetyEnabled && context.safetyEnabled(own)) return false;
         Set<IGrid> grids = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ISecurityProvider> providers = Collections.newSetFromMap(new IdentityHashMap<>());
         collectProviders(first, grids, providers, context);
@@ -280,10 +283,10 @@ public final class QuantumConnectionSecurity {
         if (!ownProviders.containsAll(providers)) return false;
         for (Scope other : context.scopes(grids)) {
             if (own.sameNetwork(other)) continue;
-            if (other.world == null || context.safetyEnabled(other)) return false;
+            if (other.world == null || Config.quantumSafetyEnabled && context.safetyEnabled(other)) return false;
         }
         return !QuantumTerminalAccess.networkSafetyIdentity(own.world, own.x, own.y, own.z)
-            .isEmpty() && !context.safetyEnabled(own);
+            .isEmpty() && (!Config.quantumSafetyEnabled || !context.safetyEnabled(own));
     }
 
     private static void collectAnchorProviders(Scope scope, Set<IGrid> grids, Set<ISecurityProvider> providers,

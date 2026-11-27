@@ -43,6 +43,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumNodePartMigration;
 import com.miaokatze.gtswn.common.quantum.QuantumNodePartRules;
 import com.miaokatze.gtswn.common.quantum.QuantumNodeTypes;
 import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
+import com.miaokatze.gtswn.common.quantum.QuantumSecurityFailure;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -234,6 +235,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 当前离线原因（运行时缓存，供状态查询与右键提示；在线时为 NONE） */
     private OfflineReason offlineReason = OfflineReason.NO_ANCHOR;
+    private QuantumSecurityFailure securityFailure = QuantumSecurityFailure.NONE;
+    /** Scratch verdict; neighbor discovery must not erase the last failed bridge attempt's diagnosis. */
+    private QuantumSecurityFailure checkedSecurityFailure = QuantumSecurityFailure.NONE;
 
     /** 上次连接维护的世界 tick；-1 = 尚未维护（首次到达时设置确定性错峰相位） */
     private long lastMaintenanceTick = -1L;
@@ -442,7 +446,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** Recheck the durable native node actor, never the current terminal holder's descriptive owner. */
     public boolean isNativeConnectionAuthorized(IGridNode first, IGridNode second) {
         if (!hasAnchor()) return false;
-        return QuantumConnectionSecurity.mayBridge(
+        checkedSecurityFailure = QuantumConnectionSecurity.bridgeFailure(
             DimensionManager.getWorld(anchorDim),
             anchorX,
             anchorY,
@@ -450,6 +454,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             first,
             second,
             this::getNativeOwnerID);
+        return checkedSecurityFailure == QuantumSecurityFailure.NONE;
     }
 
     public boolean ownsBridgeRelay(IGridNode candidate) {
@@ -459,6 +464,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void bridgeSecurityBreak(IGridNode relay) {
         if (!ownsBridgeRelay(relay)) return;
         destroyBridgeConnection();
+        securityFailure = checkedSecurityFailure;
         offlineReason = OfflineReason.NO_PERMISSION;
     }
 
@@ -618,12 +624,18 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             case NONE:
                 return "gtswn.chat.quantum.node_online";
             case NO_PERMISSION:
-                return "gtswn.chat.quantum.node_actor_no_permission";
+                return securityFailure == QuantumSecurityFailure.NONE
+                    || securityFailure == QuantumSecurityFailure.BUILD_REQUIRED
+                        ? "gtswn.chat.quantum.node_actor_no_permission"
+                        : securityFailure.key();
             case ANCHOR_NOT_QUANTIZED:
                 return "gtswn.chat.quantum.node_offline_not_quantized";
             case NO_ANCHOR:
+                return "gtswn.chat.quantum.need_bind";
             case ANCHOR_UNREACHABLE:
+                return "gtswn.chat.quantum.anchor_unloaded";
             case NETWORK_NOT_READY:
+                return "gtswn.chat.quantum.network_not_ready";
             default:
                 return "gtswn.chat.quantum.node_offline";
         }
@@ -1377,7 +1389,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             checkedCoreGrid = checkedCore == null ? null : checkedCore.getGrid();
             checkedPeerGrid = checkedPeer == null ? null : checkedPeer.getGrid();
             if (!isNativeConnectionAuthorized(checkedCore, checkedPeer)) {
+                QuantumSecurityFailure denied = checkedSecurityFailure;
                 destroyBridgeConnection();
+                securityFailure = denied;
                 failReconnect(OfflineReason.NO_PERMISSION);
                 return;
             }
@@ -1632,6 +1646,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 尝试向锚点控制器建立桥接连接，失败时记录离线原因 */
     private void tryConnect() {
+        checkedSecurityFailure = QuantumSecurityFailure.NONE;
         // v1.6.19：性能审计——建连尝试计数
         PerformanceAudit.recordQuantumTryConnect();
         // 无锚点：未经量子终端放置的节点（如创造模式直接放置）恒离线
@@ -1689,6 +1704,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return;
         }
         if (!isNativeConnectionAuthorized(myNode, anchorNode)) {
+            securityFailure = checkedSecurityFailure;
             failReconnect(OfflineReason.NO_PERMISSION);
             return;
         }
@@ -1726,11 +1742,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             }
             snapshotAnchor();
             this.offlineReason = OfflineReason.NONE;
+            this.securityFailure = QuantumSecurityFailure.NONE;
             this.reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
             // v1.6.19：性能审计——建连成功计数
             PerformanceAudit.recordQuantumBridgeSuccess();
             connected = true;
         } catch (SecurityConnectionException e) {
+            securityFailure = checkedSecurityFailure;
             // §9 风险行：网络有安全终端且放置者无权限（放置者 ≠ 网络 owner）
             failReconnect(OfflineReason.NO_PERMISSION);
         } catch (ExistingConnectionException e) {
@@ -1745,6 +1763,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             if (this.connection != null) {
                 snapshotAnchor();
                 this.offlineReason = OfflineReason.NONE;
+                this.securityFailure = QuantumSecurityFailure.NONE;
                 this.reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
                 // v1.6.19：性能审计——收养既有直连成功计数
                 PerformanceAudit.recordQuantumBridgeSuccess();

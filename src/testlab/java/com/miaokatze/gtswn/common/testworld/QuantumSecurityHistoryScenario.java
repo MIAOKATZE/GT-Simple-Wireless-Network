@@ -179,10 +179,16 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
                 NativeSecurityStationSupport.insertCard(ctx, targetStation, owner, memberCard) == null,
                 "Owner A separately provisions B with all native permissions at destination");
             terminal = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+            long initialProviderKey = ((ISecurityProvider) sourceStation).getSecurityKey();
+            if (!QuantumNetworkSecurityRegistry.providerRegistry(ctx.world())
+                .isProviderEnrolled(initialProviderKey)) introducedProviderKeys.add(initialProviderKey);
             owner.inventory.setInventorySlotContents(0, terminal);
             click(ctx, owner, terminal, SOURCE_X, Y, Z);
             requireAnchor(ctx, SOURCE_X);
             unpairedTerminal = terminal.copy();
+            // Keep an explicitly unpaired control even when resuming a protected controller can repair the held item.
+            unpairedTerminal.getTagCompound()
+                .removeTag(QuantumTerminalAccess.NBT_ENCRYPTION_KEY);
             terminal = encode(ctx, sourceStation);
             require(
                 ctx,
@@ -333,7 +339,11 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             for (ItemStack rejected : new ItemStack[] { foreignTerminal, unpairedTerminal }) {
                 terminal = rejected;
                 member.inventory.setInventorySlotContents(0, terminal);
-                denyNode(ctx, "Foreign or originally unpaired terminal is not paired by journal replay");
+                denyNode(
+                    ctx,
+                    "Foreign or originally unpaired terminal is not paired by journal replay",
+                    rejected == unpairedTerminal ? "gtswn.chat.quantum.pairing_required"
+                        : "gtswn.chat.quantum.pairing_mismatch");
             }
             terminal = held;
             member.inventory.setInventorySlotContents(0, terminal);
@@ -536,6 +546,10 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
     }
 
     private void denyNode(TestContext ctx, String label) {
+        denyNode(ctx, label, "gtswn.chat.quantum.pairing_mismatch");
+    }
+
+    private void denyNode(TestContext ctx, String label, String expectedDenial) {
         QuantumTerminalAccess.synchronize(member, terminal);
         NativeSecurityStationSupport.RecordingActor recording = (NativeSecurityStationSupport.RecordingActor) member;
         recording.clearMessages();
@@ -553,13 +567,13 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             ctx.world()
                 .isAirBlock(NODE_X, Y, NODE_Z),
             label + " produces no unauthorized node");
-        String denied = StatCollector.translateToLocalFormatted("gtswn.chat.quantum.pairing_mismatch");
+        String denied = StatCollector.translateToLocalFormatted(expectedDenial);
         require(
             ctx,
             recording.messages()
                 .stream()
                 .anyMatch(message -> message.contains(denied)),
-            label + " emits actual production native-pairing-mismatch chat");
+            label + " emits the actual production unpaired or stale-pairing diagnosis");
         ctx.event(
             "native_denied_chat",
             recording.messages()

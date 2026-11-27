@@ -253,14 +253,18 @@ public class ItemNetworkQuantumTerminal extends Item
             }
             return false;
         }
+        // A rejected conversion must not first synchronize/rewrite the held terminal.
         TileEntity clickedBeforeSync = world.getTileEntity(x, y, z);
         if (clickedBeforeSync instanceof TileController && !player.isSneaking()
             && !QuantumControllerRegistry.get(world)
-                .isQuantized(x, y, z)
-            && !QuantumSecurityPreflight
-                .preservesNativeSecurity(world, QuantumControllerRegistry.floodControllers(world, x, y, z))) {
-            sendMessage(player, "gtswn.chat.quantum.security_topology_unsafe");
-            return true;
+                .isQuantized(x, y, z)) {
+            if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true)) {
+                sendMessage(
+                    player,
+                    com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profileDenialKey(player, stack, true));
+                return true;
+            }
+            return handleControllerClick(stack, player, world, (TileController) clickedBeforeSync, x, y, z);
         }
         QuantumTerminalAccess.synchronize(player, stack);
         if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true)) {
@@ -290,7 +294,8 @@ public class ItemNetworkQuantumTerminal extends Item
                 ? QuantumTerminalAccess.canManageAnchor(player, stack, world, x, y, z)
                     || QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z)
                 : QuantumTerminalAccess.canAccessAnchor(player, stack, world, x, y, z)
-                    || QuantumTerminalAccess.canRepairPairingAtAnchor(player, stack, world, x, y, z))) {
+                    || QuantumTerminalAccess.canRepairPairingAtAnchor(player, stack, world, x, y, z)
+                    || QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z))) {
                 if (management) sendMessage(player, QuantumTerminalAccess.recoveryDenialKey(world, x, y, z));
                 else sendMessage(player, QuantumTerminalAccess.nativeDenialKey(stack, world, x, y, z));
                 return true;
@@ -359,14 +364,21 @@ public class ItemNetworkQuantumTerminal extends Item
             boolean access = QuantumTerminalAccess.canAccessAnchor(player, stack, world, x, y, z);
             if (!QuantumTerminalAccess.isPairedToNativeGrid(stack, world, x, y, z)
                 && QuantumTerminalAccess.repairPairingAtAnchor(player, stack, world, x, y, z)) access = true;
-            if (!access) {
+            boolean managementOnly = !access
+                && QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z);
+            if (!access && !managementOnly) {
                 sendMessage(player, QuantumTerminalAccess.nativeDenialKey(stack, world, x, y, z));
                 return true;
             }
             boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, x, y, z);
             writeAnchor(stack, world, x, y, z);
             int[] bound = getAnchor(stack);
-            sendBindingMessage(player, "gtswn.chat.quantum.bound", bound[1], bound[2], bound[3]);
+            sendBindingMessage(
+                player,
+                managementOnly ? "gtswn.chat.quantum.bound_management_only" : "gtswn.chat.quantum.bound",
+                bound[1],
+                bound[2],
+                bound[3]);
             QuantumTerminalSecurityHints.show(player, wasOpen);
             return true;
         }
@@ -377,6 +389,23 @@ public class ItemNetworkQuantumTerminal extends Item
         }
         if (!Platform.hasPermissions(new DimensionalCoord(world, x, y, z), player)) {
             sendMessage(player, "gtswn.chat.quantum.world_edit_denied");
+            return true;
+        }
+        if (!player.canPlayerEdit(x, y, z, 1, stack)) {
+            sendMessage(player, "gtswn.chat.quantum.world_edit_denied");
+            return true;
+        }
+        String conversionDenial = QuantumTerminalAccess.conversionDenial(player, world, x, y, z);
+        if (conversionDenial != null) {
+            com.miaokatze.gtswn.common.quantum.QuantumSecurityFeedback
+                .send(player, conversionDenial, world.provider.dimensionId, x, y, z);
+            return true;
+        }
+        QuantumSecurityPreflight.Inspection conversion = QuantumSecurityPreflight
+            .inspect(world, QuantumControllerRegistry.floodControllers(world, x, y, z));
+        if (!conversion.safe) {
+            com.miaokatze.gtswn.common.quantum.QuantumSecurityFeedback
+                .send(player, conversion.failure.key(), world.provider.dimensionId, x, y, z);
             return true;
         }
         boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, x, y, z);
@@ -420,10 +449,18 @@ public class ItemNetworkQuantumTerminal extends Item
     /** Shift+右击空气由服务端打开容器；Alt组合由专用客户端手势处理器截获。 */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        if (!world.isRemote && player.isSneaking()
-            && TerminalAirInteraction.isAir(player)
-            && QuantumTerminalAccess.canOpenTerminal(player, stack)) {
-            GTSWNGuiHandler.openTerminal(player, true);
+        if (!world.isRemote && player.isSneaking() && TerminalAirInteraction.isAir(player)) {
+            if (QuantumTerminalAccess.canOpenTerminal(player, stack)) GTSWNGuiHandler.openTerminal(player, true);
+            else {
+                int[] anchor = getAnchor(stack);
+                com.miaokatze.gtswn.common.quantum.QuantumSecurityFeedback.send(
+                    player,
+                    QuantumTerminalAccess.terminalDenialKey(player, stack, false),
+                    anchor == null ? player.dimension : anchor[0],
+                    anchor == null ? 0 : anchor[1],
+                    anchor == null ? 0 : anchor[2],
+                    anchor == null ? 0 : anchor[3]);
+            }
         }
         return stack;
     }
@@ -450,14 +487,19 @@ public class ItemNetworkQuantumTerminal extends Item
         QuantumControllerRegistry registry, int x, int y, int z) {
         // D10：洪泛 6 邻接全部相连控制器（整结构语义）
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
-        if (!QuantumSecurityPreflight.preservesNativeSecurity(world, structure)) {
-            sendMessage(player, "gtswn.chat.quantum.security_topology_unsafe");
+        QuantumSecurityPreflight.Inspection preflight = QuantumSecurityPreflight.inspect(world, structure);
+        if (!preflight.safe) {
+            com.miaokatze.gtswn.common.quantum.QuantumSecurityFeedback
+                .send(player, preflight.failure.key(), world.provider.dimensionId, x, y, z);
             return;
         }
+        String pairing = preflight.provider == null || !QuantumTerminalAccess.isNetworkSafetyEnabled(world, x, y, z)
+            ? null
+            : QuantumTerminalAccess.trustedPairingKey(player, world, structure);
         if (!registry.quantizeAll(structure, QuantumControllerRegistry.pack(x, y, z))) {
             boolean suspended = false;
             for (long member : structure) suspended |= registry.isSuspendedController(member);
-            sendMessage(player, suspended ? "gtswn.chat.quantum.resume_pending" : "gtswn.chat.quantum.no_permission");
+            sendMessage(player, suspended ? "gtswn.chat.quantum.resume_pending" : "gtswn.chat.quantum.target_invalid");
             return;
         }
         // 逐块应用连接过滤（仅放行同伴控制器/能量接收器/石英纤维朝向面）
@@ -468,6 +510,7 @@ public class ItemNetworkQuantumTerminal extends Item
                 QuantumControllerRegistry.unpackY(packed),
                 QuantumControllerRegistry.unpackZ(packed));
         }
+        if (pairing != null) setEncryptionKey(stack, pairing, null);
         writeAnchor(stack, world, x, y, z);
         int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
         if (QuantumControllerRegistry.isChannelsInfinite()) {

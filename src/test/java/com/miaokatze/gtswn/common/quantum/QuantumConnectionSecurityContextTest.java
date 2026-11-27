@@ -150,6 +150,37 @@ public class QuantumConnectionSecurityContextTest {
     }
 
     @Test
+    public void unrelatedSuccessfulDiscoveryDoesNotEraseTheLastFailedBridgeDiagnosis() throws Exception {
+        try (MaintenanceFixture fixture = new MaintenanceFixture(true, 1, 1)) {
+            MaintenanceNode node = (MaintenanceNode) fixture.edges.get(0)
+                .a()
+                .getMachine();
+            field(TileEntityNetworkQuantumNode.class, "offlineReason")
+                .set(node, TileEntityNetworkQuantumNode.OfflineReason.NO_PERMISSION);
+            field(TileEntityNetworkQuantumNode.class, "securityFailure").set(node, QuantumSecurityFailure.NO_PROVIDER);
+            assertTrue(node.isNativeConnectionAuthorized(node.nativeNode, fixture.own.node));
+            assertEquals(QuantumSecurityFailure.NO_PROVIDER.key(), node.getOfflineReasonKey());
+        }
+    }
+
+    @Test
+    public void globalRecoveryCannotExemptAForeignNativeProvider() throws Exception {
+        FixtureWorld world = world();
+        Controller own = controller(world, 0, new Grid());
+        Grid foreign = new Grid();
+        Provider station = new Provider();
+        IGridNode remote = foreign.add(station.host);
+        Config.quantumSafetyEnabled = false;
+        assertFalse(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, remote));
+        station.granted = false;
+        assertEquals(
+            QuantumSecurityFailure.BUILD_REQUIRED,
+            QuantumConnectionSecurity.bridgeFailure(world, 0, 64, 0, own.node, remote, () -> 7));
+        station.granted = true;
+        assertTrue(QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, own.node, remote, () -> 7));
+    }
+
+    @Test
     public void unloadedControllerRepresentativeIsNotReplacedByItsLoadedGridPeer() throws Exception {
         FixtureWorld world = world();
         Controller source = controller(world, 0, new Grid());
@@ -381,7 +412,7 @@ public class QuantumConnectionSecurityContextTest {
             first.destroy();
             assertFalse(QuantumConnectionSecurity.hasUnchangedOverride(first, second));
             Config.quantumSafetyEnabled = false;
-            assertTrue(QuantumConnectionSecurity.hasUnchangedOverride(null, null));
+            assertFalse(QuantumConnectionSecurity.hasUnchangedOverride(null, null));
         }
     }
 

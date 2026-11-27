@@ -64,6 +64,53 @@ import appeng.tile.networking.TileController;
 public class QuantumTerminalAccessTest {
 
     @Test
+    public void nativeConversionNeedsManagementAndBuildEvenInGlobalRecoveryMode() {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            GridFixture fixture = new GridFixture();
+            ISecurityProvider provider = (ISecurityProvider) fixture.providerNode.getMachine();
+            for (boolean global : new boolean[] { true, false }) {
+                Config.quantumSafetyEnabled = global;
+                fixture.grants.clear();
+                assertEquals(
+                    QuantumSecurityFailure.SECURITY_REQUIRED,
+                    QuantumTerminalAccess.conversionFailure(provider, 43));
+                fixture.grants.put(43, EnumSet.of(SecurityPermissions.BUILD));
+                assertEquals(
+                    QuantumSecurityFailure.SECURITY_REQUIRED,
+                    QuantumTerminalAccess.conversionFailure(provider, 43));
+                fixture.grants.put(43, EnumSet.of(SecurityPermissions.SECURITY));
+                assertEquals(
+                    QuantumSecurityFailure.BUILD_REQUIRED,
+                    QuantumTerminalAccess.conversionFailure(provider, 43));
+                fixture.grants.put(43, EnumSet.of(SecurityPermissions.BUILD, SecurityPermissions.SECURITY));
+                assertEquals(QuantumSecurityFailure.NONE, QuantumTerminalAccess.conversionFailure(provider, 43));
+                fixture.grants.put(42, EnumSet.allOf(SecurityPermissions.class));
+                assertEquals(QuantumSecurityFailure.NONE, QuantumTerminalAccess.conversionFailure(provider, 42));
+            }
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
+
+    @Test
+    public void noStationKeepsOpenConversionButCannotEnableProtection() throws Exception {
+        FixtureWorld world = world();
+        GridFixture fixture = new GridFixture();
+        fixture.hasProvider = false;
+        world.tile = identityTile(fixture.node);
+        QuantumSecurityPreflight.Inspection inspection = QuantumSecurityPreflight.inspect(world, members(1, 64, 2));
+        assertTrue(inspection.safe);
+        assertEquals(QuantumSecurityFailure.NO_PROVIDER, inspection.enablingFailure());
+        assertEquals(
+            QuantumSecurityFailure.NO_PROVIDER.key(),
+            QuantumTerminalAccess.nativeDenialKey(null, world, 1, 64, 2));
+        assertEquals(
+            "gtswn.chat.quantum.controller_owner_required",
+            QuantumTerminalAccess.recoveryDenialKey(world, 1, 64, 2));
+    }
+
+    @Test
     public void sourceMigrationChecksEveryNativeGridOnButKeepsGlobalAndLocalOffShortCircuits() throws Exception {
         boolean enabled = Config.quantumSafetyEnabled;
         try {

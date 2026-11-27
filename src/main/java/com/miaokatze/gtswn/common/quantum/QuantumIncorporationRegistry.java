@@ -505,12 +505,14 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
+            entry.securityFailure = QuantumSecurityFailure.UNLOADED;
             entry.disconnect();
             entry.deferReconnect(isolationTick);
             return;
         }
         TileEntity controller = anchor.getTileEntity(entry.ax, entry.ay, entry.az);
         if (!(controller instanceof TileController)) {
+            entry.securityFailure = QuantumSecurityFailure.INVALID_TARGET;
             entry.disconnect();
             entry.deferReconnect(isolationTick);
             return;
@@ -527,17 +529,19 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         IGridNode target = ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN);
         ArrayList<IGridNode> local = nodes((IGridHost) tile);
         if (target == null || local.isEmpty()) {
+            entry.securityFailure = QuantumSecurityFailure.NETWORK_NOT_READY;
             entry.disconnect();
             entry.deferReconnect(isolationTick);
             return;
         }
         IGridNode node = local.get(0);
-        if (!QuantumConnectionSecurity
-            .mayBridge(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID)) {
+        entry.securityFailure = QuantumConnectionSecurity
+            .bridgeFailure(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID);
+        if (entry.securityFailure != QuantumSecurityFailure.NONE) {
             entry.disconnect();
             entry.deferReconnect(isolationTick);
-            if (DebugTestGate.probesActive())
-                BusinessDiagnostics.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
+            if (DebugTestGate.probesActive()) BusinessDiagnostics
+                .at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=" + entry.securityFailure.name());
             return;
         }
         if (entry.local == node && entry.target == target && entry.hasLiveConnections()) {
@@ -575,6 +579,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             connected = true;
             if (DebugTestGate.probesActive()) BusinessDiagnostics.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
         } catch (appeng.api.exceptions.FailedConnection failure) {
+            entry.securityFailure = failure instanceof appeng.api.exceptions.SecurityConnectionException
+                ? QuantumSecurityFailure.BUILD_REQUIRED
+                : QuantumSecurityFailure.NETWORK_NOT_READY;
             // Security failures remain isolated and offline with bounded exponential retry.
             entry.deferReconnect(isolationTick);
             if (DebugTestGate.probesActive()) BusinessDiagnostics.at(
@@ -862,6 +869,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private long nextAttempt;
         private long lastIsolation = Long.MIN_VALUE;
         private int backoff = 20;
+        private QuantumSecurityFailure securityFailure = QuantumSecurityFailure.NETWORK_NOT_READY;
         private AnchorKey cachedAnchorKey, normalizedKey;
         private QuantumControllerRegistry normalizedRegistry;
         private long normalizedRevision;
@@ -891,6 +899,17 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         public String ownerName() {
             return ownerName;
+        }
+
+        public String connectionStatusKey() {
+            if (isConnected()) return "gtswn.chat.quantum.node_online";
+            return securityFailure == QuantumSecurityFailure.NONE ? "gtswn.chat.quantum.network_not_ready"
+                : securityFailure.key();
+        }
+
+        public int connectionActorID() {
+            // A diagnostic must not allocate an AE player ID for a legacy registration.
+            return nativeOwnerID;
         }
 
         private int nativeActorID() {

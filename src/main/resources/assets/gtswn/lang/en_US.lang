@@ -542,9 +542,9 @@ gtswn.chat.quantum.info.infinite=infinite
 gtswn.tooltip.quantum_terminal.owner=§7Current user: %s
 gtswn.tooltip.quantum_terminal.security_unbound=§7Not paired with an AE Security Terminal
 gtswn.chat.quantum.open_network_hint=This quantum AE network has safety OFF. Anyone can recolor or migrate it, or cancel its quantization. The owner or a player with SECURITY permission can enable safety in the quantum terminal UI. Pairing alone does not enable it.
-gtswn.chat.quantum.manage_permission_required=You must be the network owner or have the 'Security' permission.
+gtswn.chat.quantum.manage_permission_required=§c[Quantum Terminal] This management action requires the current native network owner or SECURITY permission.
 gtswn.tooltip.quantum_terminal.security_bound=§aPaired with an AE Security Terminal
-gtswn.tooltip.quantum_terminal.security_usage=§7Network security is off by default. The owner or a player with SECURITY can enable it.\n§7When on, a matching AE security pairing is required.\n§7Recoloring, migration and removing quantization also require ownership or SECURITY.
+gtswn.tooltip.quantum_terminal.security_usage=§7Ordinary networks without a station can be quantized directly; safety defaults to OFF.\n§7Converting a secured native network requires its owner, or SECURITY and BUILD.\n§7Enabling safety requires one ready station; normal use requires matching pairing and BUILD.\n§7Managers can access safety management or sneak-right-click a controller to recover broken pairing.
 gtswn.tooltip.quantum_terminal.usage.release=§dAlt+right-click a block you incorporated: Release it (creative bypasses ownership)§r
 
 gtswn.gui.quantum.color=Network color
@@ -890,7 +890,7 @@ gtswn.command.safety.current=Quantum network safety is currently %s.
 gtswn.command.safety.saved=Quantum network safety is now %s; saved to gtswn_ae.cfg.
 gtswn.command.safety.save_failed=Could not save quantum network safety to gtswn_ae.cfg. The active setting remains %s.
 gtswn.command.safety.enabled=Security checks are active for networks whose local safety is ON. Networks with local safety OFF remain open.
-gtswn.command.safety.disabled=Recovery access enabled: quantum security checks are bypassed. Local network safety settings and pairings are preserved.
+gtswn.command.safety.disabled=Quantum recovery access enabled. Network settings and pairing are retained; foreign-network and first-conversion authorization still apply.
 gtswn.gui.quantum.safety=Network safety
 gtswn.gui.quantum.safety_scope=Changes this quantum network only. Owner or SECURITY permission is required even while disabled.
 gtswn.gui.quantum.safety_global_off=Global safety disabled
@@ -2069,7 +2069,7 @@ gtswn.device.gui.legacy_total=Terminal has %s rows; this legacy connection displ
 
 # Quantum security access and recovery diagnostics
 gtswn.chat.quantum.node_actor_no_permission=§c[Quantum Node] The node connection identity is not authorized. Check its original placer's BUILD permission and the security-station connection.
-gtswn.chat.quantum.security_topology_unsafe=§c[Quantum Terminal] The security station may be disconnected by quantization. Nothing was changed. Adjust its connection before retrying.
+gtswn.chat.quantum.security_topology_unsafe=§c[Quantum Terminal] Quantization would disconnect the security station. Nothing was changed. Connect it directly to a controller or through a retained energy-block path.
 gtswn.chat.quantum.pairing_mismatch=§c[Quantum Terminal] Pairing does not match this network. Encode at its security station, or have a manager with BUILD and SECURITY right-click the controller to repair the binding.
 gtswn.chat.quantum.security_unavailable=§c[Quantum Terminal] This network's security station is disconnected or not ready. Check the connection; the native owner can sneak-right-click the controller to recover an existing broken network.
 gtswn.chat.quantum.world_edit_denied=§c[Quantum Terminal] You cannot edit the target position. Nothing was changed.
@@ -2081,3 +2081,33 @@ gtswn.chat.quantum.profile_readonly=§c[Quantum Terminal] This profile is read-o
 gtswn.chat.quantum.profile_source_unavailable=§c[Quantum Terminal] The profile's fixed source changed or is unavailable. Check native access; its owner must release the old association before rebinding and importing.
 
 gtswn.tooltip.authored_locale=en_US
+
+## Quantum security diagnostics
+gtswn.chat.quantum.controller_owner_required=§c[Quantum Terminal] Without a security station, recovery requires the native owner of the current controllers. Ask their owner to recover this network.
+gtswn.chat.quantum.bound_management_only=§a[Quantum Terminal] Bound management access at %s, %s, %s. Normal operations still require matching pairing and BUILD.
+gtswn.chat.quantum.target_invalid=§c[Quantum Network] The controller was replaced, dequantized, or its binding expired. Check the target and bind again.
+gtswn.chat.quantum.anchor_unloaded=§c[Quantum Network] The anchor is unreachable or its area is unloaded. Check the controller and chunk loading, then retry.
+gtswn.chat.quantum.network_not_ready=§c[Quantum Network] The native AE network is not ready. Retry after initialization.
+gtswn.chat.quantum.grid_split=§c[Quantum Network] Controller members are on different native AE grids. Check the structure and connections; nothing was changed.
+gtswn.chat.quantum.security_missing=§c[Quantum Network] This network has no security station. Enabling safety or joining a protected network requires one valid station.
+gtswn.chat.quantum.security_multiple=§c[Quantum Network] This connection involves multiple security stations. Check the connected networks and their authorization domains.
+gtswn.chat.quantum.security_not_ready=§c[Quantum Network] The security station is not ready. Check power, channels and connections, then retry after the native network stabilizes.
+gtswn.chat.quantum.security_search_limit=§c[Quantum Network] The security topology inspection reached its limit. Use a more direct security-station connection and retry; nothing was changed.
+gtswn.chat.quantum.pairing_required=§c[Quantum Network] This terminal is not paired. Encode it at the target AE security station; a manager with BUILD and SECURITY can also right-click the controller to repair it.
+gtswn.chat.quantum.build_required=§c[Quantum Network] This action requires BUILD on the target native AE network. Ask its manager to grant access.
+gtswn.chat.quantum.node_actor_unknown=§c[Quantum Network] The quantum node has no valid native actor. Have an authorized player check its ownership and place it again.
+gtswn.chat.quantum.request_expired=§c[Quantum Network] The request expired or its target changed. Nothing was changed. Refresh or reopen the terminal and retry.
+gtswn.chat.quantum.safety_enabled=§c[Quantum Network] Network safety is now ON. Unauthorized node connections will be disconnected.
+gtswn.chat.quantum.safety_disabled=§c[Quantum Network] Network safety is now OFF and this quantum network is open. External networks still enforce their own permissions.
+gtswn.chat.quantum.info.restricted=§c[Quantum Network] Connection identities and remote coordinates are only shown to authorized players.
+gtswn.gui.quantum.safety_global_on=Global policy: active; follows this network's ON/OFF setting
+gtswn.gui.quantum.safety_enable_effect=Enabling requires one ready security station and revokes unauthorized node connections.
+gtswn.gui.quantum.station_status.0=Native security station: unknown
+gtswn.gui.quantum.station_status.1=Native security station: one ready station
+gtswn.gui.quantum.station_status.2=Native security station: absent
+gtswn.gui.quantum.station_status.3=Native security station: multiple
+gtswn.gui.quantum.station_status.4=Native security station: not ready
+gtswn.gui.quantum.pairing_status.0=Held terminal pairing: unknown
+gtswn.gui.quantum.pairing_status.1=Held terminal pairing: matches this network
+gtswn.gui.quantum.pairing_status.2=Held terminal pairing: not encoded
+gtswn.gui.quantum.pairing_status.3=Held terminal pairing: expired or another network

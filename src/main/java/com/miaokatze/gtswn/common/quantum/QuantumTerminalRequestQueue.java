@@ -107,11 +107,28 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
             boolean canChange = data.online && !data.networkSafetyIdentity.isEmpty()
                 && QuantumTerminalAccess.canChangeNetworkSafety(player, held);
             long safetyToken = PacketSetQuantumNetworkSafety.issueToken(player, held, data, canChange);
+            int station = 0, pairing = 0;
+            if (data.online && authorizedRead(player, held) && expectedAnchor != null) {
+                net.minecraft.world.World world = net.minecraftforge.common.DimensionManager
+                    .getWorld(expectedAnchor[0]);
+                station = QuantumTerminalAccess
+                    .securityStatus(world, expectedAnchor[1], expectedAnchor[2], expectedAnchor[3]);
+                pairing = held.getTagCompound()
+                    .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY)
+                    .isEmpty()
+                        ? 2
+                        : QuantumTerminalAccess
+                            .isPairedToNativeGrid(held, world, expectedAnchor[1], expectedAnchor[2], expectedAnchor[3])
+                                ? 1
+                                : 3;
+            }
             PacketSyncQuantumTerminalDataLite reply = new PacketSyncQuantumTerminalDataLite(
                 data,
                 Config.quantumSafetyEnabled,
                 canChange,
-                safetyToken);
+                safetyToken,
+                station,
+                pairing);
             final String expectedIdentity = data.networkSafetyIdentity;
             if (!data.online) {
                 com.miaokatze.gtswn.network.telemetry.TelemetryTransport.cancel(player, "quantum-terminal");

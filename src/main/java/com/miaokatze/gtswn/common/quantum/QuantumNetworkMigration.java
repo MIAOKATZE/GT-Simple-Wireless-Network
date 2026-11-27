@@ -70,9 +70,13 @@ public final class QuantumNetworkMigration {
         Set<Long> bindingMembers = sourceRegistry.migrationBindingMembers(plan.sourceMembers);
 
         // Commit durable binding intent before disconnecting bridges or updating terminal cursors.
-        if (!targetRegistry
-            .quantizeTransferred(plan.targetMembers, QuantumControllerRegistry.pack(x, y, z), sourceAnchor.generation))
+        if (!targetRegistry.quantizeTransferred(
+            plan.targetMembers,
+            QuantumControllerRegistry.pack(x, y, z),
+            sourceAnchor.generation)) {
+            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.target_invalid");
             return false;
+        }
         QuantumNetworkColorRegistry.get(targetWorld)
             .recolor(plan.targetMembers, color);
         AnchorKey destination = new AnchorKey(targetWorld.provider.dimensionId, x, y, z);
@@ -178,8 +182,13 @@ public final class QuantumNetworkMigration {
             if (deniedAnchor != null) {
                 World deniedWorld = DimensionManager.getWorld(deniedAnchor[0]);
                 if (deniedWorld != null && deniedWorld.blockExists(deniedAnchor[1], deniedAnchor[2], deniedAnchor[3])) {
-                    String denial = QuantumTerminalAccess
-                        .nativeDenialKey(terminal, deniedWorld, deniedAnchor[1], deniedAnchor[2], deniedAnchor[3]);
+                    String denial = QuantumTerminalAccess.nativeDenialKey(
+                        terminal,
+                        deniedWorld,
+                        deniedAnchor[1],
+                        deniedAnchor[2],
+                        deniedAnchor[3],
+                        true);
                     if (!"gtswn.chat.quantum.no_permission".equals(denial)) return fail(player, denial);
                 }
             }
@@ -232,16 +241,21 @@ public final class QuantumNetworkMigration {
         String editDenial = editDenial(player, terminal, sourceWorld, sourceMembers, false);
         if (editDenial == null) editDenial = editDenial(player, terminal, targetWorld, targetMembers, true);
         if (editDenial != null) return fail(player, editDenial);
+        String conversionDenial = QuantumTerminalAccess.conversionDenial(player, targetWorld, x, y, z);
+        if (conversionDenial != null) return fail(player, conversionDenial);
+        QuantumSecurityPreflight.Inspection preflight = QuantumSecurityPreflight.inspect(targetWorld, targetMembers);
+        if (!preflight.safe) return fail(player, preflight.failure.key());
         String fromKey = null, toKey = null;
         boolean protectedSource = Config.quantumSafetyEnabled
             && QuantumTerminalAccess.isNetworkSafetyEnabled(sourceWorld, source[1], source[2], source[3]);
         boolean protectedDestination = protectedSource
             || Config.quantumSafetyEnabled && QuantumTerminalAccess.isNetworkSafetyEnabled(targetWorld, x, y, z);
         if (protectedDestination) {
+            QuantumSecurityFailure failure = preflight.enablingFailure();
+            if (failure != QuantumSecurityFailure.NONE) return fail(player, failure.key());
             boolean alreadyPairedDestination = !protectedSource
                 && QuantumTerminalAccess.isPairedToNativeGrid(terminal, targetWorld, x, y, z)
-                && QuantumTerminalAccess.canAccessAnchor(player, terminal, targetWorld, x, y, z)
-                && QuantumSecurityPreflight.preservesNativeSecurity(targetWorld, targetMembers);
+                && QuantumTerminalAccess.canAccessAnchor(player, terminal, targetWorld, x, y, z);
             if (!alreadyPairedDestination) {
                 toKey = QuantumTerminalAccess.trustedPairingKey(player, targetWorld, targetMembers);
                 if (toKey == null) return fail(player, "gtswn.chat.quantum.migration_pairing_required");

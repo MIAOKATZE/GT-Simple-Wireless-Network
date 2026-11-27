@@ -3,6 +3,7 @@
 
 package com.miaokatze.gtswn.common.quantum;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -71,6 +72,30 @@ public class QuantumSecurityPreflightTest {
         Map<IGridNode, EnumSet<ForgeDirection>> result = new IdentityHashMap<>();
         result.put(controller.node, sides);
         return result;
+    }
+
+    @Test
+    public void aShortProviderPathSurvivesAQueuedBranchAtTheSearchLimit() {
+        Node controller = new Node(), provider = new Node();
+        for (int i = 0; i < 16384; i++) connect(controller, new Node(), ForgeDirection.UNKNOWN, false);
+        connect(controller, provider, ForgeDirection.UNKNOWN, false);
+        assertEquals(
+            QuantumSecurityFailure.NONE,
+            QuantumSecurityPreflight
+                .reachability(filtered(controller, EnumSet.noneOf(ForgeDirection.class)), provider.node));
+    }
+
+    @Test
+    public void disconnectedAndIncompleteInspectionsHaveDifferentRecoveryAdvice() {
+        Node controller = new Node(), unreachable = new Node();
+        Map<IGridNode, EnumSet<ForgeDirection>> sides = filtered(controller, EnumSet.noneOf(ForgeDirection.class));
+        assertEquals(
+            QuantumSecurityFailure.TOPOLOGY_DISCONNECTED,
+            QuantumSecurityPreflight.reachability(sides, unreachable.node));
+        for (int i = 0; i < 16384; i++) connect(controller, new Node(), ForgeDirection.UNKNOWN, false);
+        assertEquals(
+            QuantumSecurityFailure.SEARCH_LIMIT,
+            QuantumSecurityPreflight.reachability(sides, unreachable.node));
     }
 
     private static final class Node {

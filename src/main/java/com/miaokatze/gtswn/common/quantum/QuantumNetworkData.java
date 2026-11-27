@@ -92,6 +92,9 @@ public class QuantumNetworkData {
     public long networkSafetyRequestToken;
     /** A native manager may recover the safety switch without gaining access to network metrics. */
     public boolean managementOnly;
+    /** Per-response diagnostics; never used for authorization or stored in a shared snapshot. */
+    public int nativeSecurityStatus;
+    public int pairingStatus;
 
     /** 锚点控制器维度与坐标 */
     public int anchorDim;

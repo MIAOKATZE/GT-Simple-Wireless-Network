@@ -17,6 +17,27 @@ import io.netty.buffer.Unpooled;
 public class PacketSyncQuantumTerminalDataTest {
 
     @Test
+    public void diagnosticsAreResponseLocalAndMalformedStatesAreRejected() {
+        QuantumNetworkData shared = new QuantumNetworkData();
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            new PacketSyncQuantumTerminalDataLite(shared, true, true, 1L, 2, 3).toBytes(buffer);
+            PacketSyncQuantumTerminalDataLite decoded = new PacketSyncQuantumTerminalDataLite();
+            decoded.fromBytes(buffer);
+            assertEquals(2, decoded.getData().nativeSecurityStatus);
+            assertEquals(3, decoded.getData().pairingStatus);
+            assertEquals(0, shared.nativeSecurityStatus);
+            assertEquals(0, shared.pairingStatus);
+            buffer.setIndex(0, buffer.writerIndex());
+            buffer.setByte(buffer.writerIndex() - 1, 4);
+            decoded.fromBytes(buffer);
+            org.junit.Assert.assertNull(decoded.getData());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
     public void responseCapabilitiesDoNotMutateSharedAnchorSnapshot() {
         QuantumNetworkData shared = new QuantumNetworkData();
         shared.online = true;
@@ -101,7 +122,7 @@ public class PacketSyncQuantumTerminalDataTest {
         ByteBuf buffer = Unpooled.buffer();
         try {
             new PacketSyncQuantumTerminalDataLite(sample()).toBytes(buffer);
-            assertEquals(51 + "controller-generation".length(), buffer.readableBytes());
+            assertEquals(53 + "controller-generation".length(), buffer.readableBytes());
             PacketSyncQuantumTerminalDataLite decoded = new PacketSyncQuantumTerminalDataLite();
             decoded.fromBytes(buffer);
             assertSnapshot(decoded.getData(), 3, 2);

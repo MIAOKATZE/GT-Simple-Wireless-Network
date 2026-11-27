@@ -542,9 +542,9 @@ gtswn.chat.quantum.info.infinite=无限
 gtswn.tooltip.quantum_terminal.owner=§7当前使用者：%s
 gtswn.tooltip.quantum_terminal.security_unbound=§7未与 AE 安全终端配对
 gtswn.chat.quantum.open_network_hint=当前量子化AE网络安全为OFF，任何人都可以调色、迁移或取消量子化。拥有者或持有“安全”权限的玩家可在量子终端界面开启；安全配对本身不会自动开启。
-gtswn.chat.quantum.manage_permission_required=必须是网络拥有者或者持有‘安全’权限
+gtswn.chat.quantum.manage_permission_required=§c[量子终端] 此管理操作需要当前原生网络的拥有者身份或 SECURITY 权限。
 gtswn.tooltip.quantum_terminal.security_bound=§a已与 AE 安全终端配对
-gtswn.tooltip.quantum_terminal.security_usage=§7网络安全默认关闭；拥有者或有“安全”权限的玩家可在终端开启。\n§7开启后需要对应的 AE 安全配对。\n§7调色、迁移、取消量子化另需拥有者身份或“安全”权限。
+gtswn.tooltip.quantum_terminal.security_usage=§7无安全站的普通网络可直接量子化，网络安全默认 OFF。\n§7首次转换已有安全站的网络需拥有者，或 SECURITY 与 BUILD 权限。\n§7开启安全需唯一可用安全终端；普通使用需匹配配对和 BUILD。\n§7管理者可在配对失效时进入安全管理或潜行右击控制器恢复。
 gtswn.tooltip.quantum_terminal.usage.release=§dAlt+右击自己已并入的方块：解除量子并入（创造模式不限拥有者）§r
 
 gtswn.gui.quantum.color=网络颜色
@@ -890,7 +890,7 @@ gtswn.command.safety.current=量子网络安全策略当前为 %s。
 gtswn.command.safety.saved=量子网络安全策略已切换为 %s，并保存至 gtswn_ae.cfg。
 gtswn.command.safety.save_failed=无法将量子网络安全策略保存至 gtswn_ae.cfg，当前生效设置仍为 %s。
 gtswn.command.safety.enabled=已对本网络安全为ON的网络启用安全校验；本网络安全为OFF的网络保持开放。
-gtswn.command.safety.disabled=已启用恢复访问：跳过量子安全校验，保留各网络本地安全设置与配对。
+gtswn.command.safety.disabled=已启用量子恢复访问，保留各网络设置与配对；外网权限和首次转换授权仍执行。
 gtswn.gui.quantum.safety=本网络安全
 gtswn.gui.quantum.safety_scope=仅修改当前量子化网络；关闭后仍须拥有者或“安全”权限才能修改。
 gtswn.gui.quantum.safety_global_off=全局安全已关闭
@@ -2069,7 +2069,7 @@ gtswn.device.gui.legacy_total=终端共 %s 条；旧版连接仅能显示前 %s 
 
 # Quantum security access and recovery diagnostics
 gtswn.chat.quantum.node_actor_no_permission=§c[量子节点] 节点连接身份未获当前网络授权。请检查原放置者的 BUILD 权限及安全终端连接。
-gtswn.chat.quantum.security_topology_unsafe=§c[量子终端] 无法确认量子化后仍与唯一安全终端连通，操作未执行。请先调整安全终端连接。
+gtswn.chat.quantum.security_topology_unsafe=§c[量子终端] 量子化会切断安全终端连接，操作未执行。请将安全终端直接接控制器，或保留合法能量方块连接路径。
 gtswn.chat.quantum.pairing_mismatch=§c[量子终端] 配对与当前网络不匹配。请在目标安全终端重新编码，或由具备 BUILD 和 SECURITY 权限的管理者右击控制器修复绑定。
 gtswn.chat.quantum.security_unavailable=§c[量子终端] 当前网络的安全终端未连接或尚未就绪。请检查连接；旧异常网络可由原生拥有者潜行右击控制器恢复。
 gtswn.chat.quantum.world_edit_denied=§c[量子终端] 目标位置不允许当前玩家编辑，操作未执行。
@@ -2081,3 +2081,33 @@ gtswn.chat.quantum.profile_readonly=§c[量子终端] 此档案只读，不能�
 gtswn.chat.quantum.profile_source_unavailable=§c[量子终端] 档案固定来源已变化或不可用。请检查来源权限；需要改绑时，由档案拥有者解除关联后重新导入。
 
 gtswn.tooltip.authored_locale=zh_CN
+
+## Quantum security diagnostics
+gtswn.chat.quantum.controller_owner_required=§c[量子终端] 当前网络没有安全终端，此恢复操作需要当前控制器的原生拥有者。请由拥有者处理。
+gtswn.chat.quantum.bound_management_only=§a[量子终端] 已绑定控制器 %s, %s, %s 的管理入口；普通操作仍需匹配配对和 BUILD 权限。
+gtswn.chat.quantum.target_invalid=§c[量子网络] 锚点控制器已取消量子化、被替换或绑定已失效。请检查目标并重新绑定。
+gtswn.chat.quantum.anchor_unloaded=§c[量子网络] 锚点不可达或所在区域未加载。请检查控制器及区块加载后重试。
+gtswn.chat.quantum.network_not_ready=§c[量子网络] 原生 AE 网络尚未就绪，请等待初始化完成后重试。
+gtswn.chat.quantum.grid_split=§c[量子网络] 控制器成员尚未处于同一个原生 AE 网络。请检查结构和连接，操作未执行。
+gtswn.chat.quantum.security_missing=§c[量子网络] 当前网络没有安全终端。开启安全或连接受保护网络需要唯一有效的安全终端。
+gtswn.chat.quantum.security_multiple=§c[量子网络] 当前连接涉及多个安全终端，无法确认唯一授权来源。请分别检查所接网络及安全终端。
+gtswn.chat.quantum.security_not_ready=§c[量子网络] 安全终端尚未就绪。请检查供电、频道和连接，待原生网络稳定后重试。
+gtswn.chat.quantum.security_search_limit=§c[量子网络] 已达到安全拓扑检查上限，尚不能确认连通性。请使用更直接的安全终端连接后重试；操作未执行。
+gtswn.chat.quantum.pairing_required=§c[量子网络] 当前终端尚未配对。请在目标 AE 安全终端编码；具备 BUILD 和 SECURITY 的管理者也可显式右击控制器修复。
+gtswn.chat.quantum.build_required=§c[量子网络] 此操作需要目标原生 AE 网络的 BUILD 权限。请由网络管理者授权后重试。
+gtswn.chat.quantum.node_actor_unknown=§c[量子网络] 量子节点缺少有效的原生连接身份。请由有权玩家检查节点归属并重新放置。
+gtswn.chat.quantum.request_expired=§c[量子网络] 操作上下文已过期或目标已改变，操作未执行。请刷新或重新打开终端后重试。
+gtswn.chat.quantum.safety_enabled=§c[量子网络] 本网络安全已开启；未获授权的节点连接将断开。
+gtswn.chat.quantum.safety_disabled=§c[量子网络] 本网络安全已关闭，本量子网络恢复开放操作；外部网络仍独立校验权限。
+gtswn.chat.quantum.info.restricted=§c[量子网络] 该网络的连接身份及远端位置仅向有权玩家显示。
+gtswn.gui.quantum.safety_global_on=全局策略：生效；按本网络 ON/OFF 执行
+gtswn.gui.quantum.safety_enable_effect=开启需要唯一可用安全终端；开启后撤销未获授权的节点连接。
+gtswn.gui.quantum.station_status.0=原生安全终端：状态待确认
+gtswn.gui.quantum.station_status.1=原生安全终端：唯一且已就绪
+gtswn.gui.quantum.station_status.2=原生安全终端：未接入
+gtswn.gui.quantum.station_status.3=原生安全终端：存在多个
+gtswn.gui.quantum.station_status.4=原生安全终端：未就绪
+gtswn.gui.quantum.pairing_status.0=手持终端配对：状态待确认
+gtswn.gui.quantum.pairing_status.1=手持终端配对：匹配当前网络
+gtswn.gui.quantum.pairing_status.2=手持终端配对：尚未编码
+gtswn.gui.quantum.pairing_status.3=手持终端配对：失效或属于其他网络

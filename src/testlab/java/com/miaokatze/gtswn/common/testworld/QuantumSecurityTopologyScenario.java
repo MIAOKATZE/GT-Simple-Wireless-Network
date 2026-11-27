@@ -50,10 +50,12 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
     private final Set<Long> introducedKeys = new HashSet<>();
     private NativeSecurityStationSupport.RecordingActor owner, member, outsider;
     private TileEntity controller, station;
+    private TileEntity migrationSource;
+    private TileEntity placementStation;
     private ItemStack ownerTerminal, handoff, currentCard;
     private int stage;
     private long stageTick, originalKey;
-    private boolean started, openCancellationRestored;
+    private boolean started, openCancellationRestored, openCancellationResumed;
 
     @Override
     public String id() {
@@ -84,7 +86,10 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         }
         introducedKeys.clear();
         stage = 0;
+        migrationSource = null;
+        placementStation = null;
         openCancellationRestored = false;
+        openCancellationResumed = false;
         stageTick = ctx.tick();
         owner = NativeSecurityStationSupport.actor(ctx, "owner");
         member = NativeSecurityStationSupport.actor(ctx, "member");
@@ -121,6 +126,23 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         placeCable(ctx, X + 1);
         placeCable(ctx, X + 2);
         station = placeStation(ctx, REMOTE_STATION_X);
+        require(
+            ctx,
+            ctx.world()
+                .isAirBlock(X + 8, Y, Z),
+            "Open migration source position starts empty");
+        migrationSource = TestWorldFixtures.aeOwnedBlock(
+            ctx.world(),
+            X + 8,
+            Y,
+            Z,
+            AEApi.instance()
+                .definitions()
+                .blocks()
+                .controller()
+                .maybeStack(1)
+                .get(),
+            owner);
         ctx.event("transport", "Synthetic non-OP server actors and real native callbacks; no TCP or client claim");
     }
 
@@ -128,6 +150,7 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
     public void tick(TestContext ctx) {
         NativeSecurityStationSupport.power(controller);
         NativeSecurityStationSupport.power(station);
+        NativeSecurityStationSupport.power(migrationSource);
         if (!Config.quantumSafetyEnabled) {
             ctx.fail("Global safety master changed during topology test");
             return;
@@ -155,6 +178,8 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                 return;
             case 1:
                 if (!NativeSecurityStationSupport.ready(controller, station) || !allNativeGrants()) return;
+                if (!ItemNetworkQuantumTerminal
+                    .isControllerActive((appeng.tile.networking.TileController) migrationSource)) return;
                 assertGrants(ctx);
                 ownerTerminal = NativeSecurityStationSupport.encodeAt(
                     ctx,
@@ -168,6 +193,8 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                     encodedProvider(originalKey) == station,
                     "Native encoder pairs to the actual same-grid station");
                 assertUnsafeQuantizationRejected(ctx);
+                assertUnprivilegedConversionRejected(ctx);
+                assertOpenMigrationRejected(ctx);
                 // Seed an explicit legacy fixture using the old saved-state shape, not the guarded player entry.
                 Set<Long> legacyMembers = QuantumControllerRegistry.floodControllers(ctx.world(), X, Y, Z);
                 require(
@@ -188,10 +215,25 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                     || NativeSecurityStationSupport.node(station) == null
                     || grid(controller) == grid(station)
                     || proxySides().contains(ForgeDirection.EAST)) return;
+                NBTTagCompound beforeEnable = (NBTTagCompound) ownerTerminal.writeToNBT(new NBTTagCompound())
+                    .copy();
                 require(
                     ctx,
-                    QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true),
-                    "Actual controller owner enables local safety for the legacy fixture");
+                    !QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true)
+                        && !QuantumTerminalAccess.isNetworkSafetyEnabled(ctx.world(), X, Y, Z)
+                        && beforeEnable.equals(ownerTerminal.writeToNBT(new NBTTagCompound())),
+                    "Production safety ON rejects a missing station without changing OFF or the held key");
+                assertSecurityStationPlacement(ctx);
+                // Explicit old-save input: the new production API intentionally cannot create this broken ON state.
+                QuantumNetworkSecurityRegistry.get(ctx.world())
+                    .setSafety(
+                        ctx.world(),
+                        QuantumControllerRegistry.get(ctx.world())
+                            .registeredStructure(QuantumControllerRegistry.pack(X, Y, Z)),
+                        true);
+                ctx.event(
+                    "fixture",
+                    "LEGACY_ON_WITH_MISSING_STATION: registry seed only, after real enabling rejection");
                 assertGrants(ctx);
                 require(
                     ctx,
@@ -201,7 +243,7 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                     ctx,
                     !MonitoringProfiles.hasProfileReference(handoff),
                     "Legacy fixture has no independent Profile ACL");
-                rejectBoundAndFresh(ctx, "LEGACY_VALID_KEY_DIFFERENT_GRID");
+                rejectBoundAndFresh(ctx, "LEGACY_VALID_KEY_DIFFERENT_GRID", "gtswn.chat.quantum.security_missing");
                 require(
                     ctx,
                     !QuantumTerminalAccess.canRecoverController(member, handoff, ctx.world(), X, Y, Z),
@@ -211,7 +253,7 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                 require(
                     ctx,
                     QuantumControllerRegistry.get(ctx.world())
-                        .isQuantized(X, Y, Z) && hasChat(member, "gtswn.chat.quantum.security_unavailable"),
+                        .isQuantized(X, Y, Z) && hasChat(member, "gtswn.chat.quantum.controller_owner_required"),
                     "Detached teammate cannot cancel legacy control and receives the current-provider diagnostic");
                 require(
                     ctx,
@@ -280,7 +322,7 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
             case 6:
                 if (!NativeSecurityStationSupport.ready(controller, station) || !hasGrant(SecurityPermissions.SECURITY)
                     || hasGrant(SecurityPermissions.BUILD)) return;
-                rejectBoundAndFresh(ctx, "SECURITY_ONLY_CANNOT_ISSUE_ORDINARY_ACCESS_PAIRING");
+                assertUnpairedManagementBinding(ctx);
                 require(
                     ctx,
                     QuantumTerminalAccess.canRecoverController(member, handoff, ctx.world(), X, Y, Z),
@@ -337,6 +379,10 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
     }
 
     private void rejectBoundAndFresh(TestContext ctx, String reason) {
+        rejectBoundAndFresh(ctx, reason, "gtswn.chat.quantum.pairing_mismatch");
+    }
+
+    private void rejectBoundAndFresh(TestContext ctx, String reason, String expectedFailure) {
         require(
             ctx,
             bindingExists(ctx, handoff),
@@ -360,8 +406,8 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         if (denied != null) NativeSecurityMatrix.assertManagementOnly(ctx, member, handoff);
         require(
             ctx,
-            hasChat(member, "gtswn.chat.quantum.pairing_mismatch"),
-            "Real bound-terminal callback explains the pairing mismatch");
+            hasChat(member, expectedFailure),
+            "Real bound-terminal callback reports the actual missing-station or pairing cause");
         ctx.event("topology_denial_chat", reason + "; bound=" + member.messages());
         ItemStack fresh = handoff.copy();
         fresh.getTagCompound()
@@ -370,9 +416,47 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         click(ctx, member, fresh);
         require(
             ctx,
-            !ItemNetworkQuantumTerminal.isBound(fresh) && hasChat(member, "gtswn.chat.quantum.pairing_mismatch"),
+            !ItemNetworkQuantumTerminal.isBound(fresh) && hasChat(member, expectedFailure),
             "Same key on an unbound control is refused without writing a controller binding");
         ctx.event("topology_denial_chat", reason + "; fresh=" + member.messages());
+        ItemStack neverEncoded = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+        member.clearMessages();
+        click(ctx, member, neverEncoded);
+        require(
+            ctx,
+            !ItemNetworkQuantumTerminal.isBound(neverEncoded) && hasChat(
+                member,
+                "gtswn.chat.quantum.security_missing".equals(expectedFailure) ? expectedFailure
+                    : "gtswn.chat.quantum.pairing_required"),
+            "Never-encoded terminal distinguishes missing station from missing pairing without granting a binding");
+    }
+
+    private void assertUnpairedManagementBinding(TestContext ctx) {
+        ItemStack management = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+        member.clearMessages();
+        click(ctx, member, management);
+        require(
+            ctx,
+            ItemNetworkQuantumTerminal.isBound(management) && management.getTagCompound()
+                .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY)
+                .isEmpty()
+                && QuantumTerminalAccess.canChangeNetworkSafety(member, management)
+                && QuantumTerminalAccess.canOpenTerminal(member, management)
+                && !QuantumTerminalAccess.validate(member, management),
+            "SECURITY-only actor binds management access without encoding a key or acquiring ordinary BUILD access");
+        NativeSecurityMatrix.assertManagementOnly(ctx, member, management);
+        String confirmation = StatCollector
+            .translateToLocalFormatted("gtswn.chat.quantum.bound_management_only", X, Y, Z);
+        require(
+            ctx,
+            member.messages()
+                .stream()
+                .anyMatch(message -> message.contains(confirmation)),
+            "Management binding is explicitly explained by the real interaction reply");
+        require(
+            ctx,
+            hasGrant(SecurityPermissions.SECURITY) && !hasGrant(SecurityPermissions.BUILD),
+            "Management binding does not change the actual native ACL");
     }
 
     private boolean hasChat(NativeSecurityStationSupport.RecordingActor actor, String key) {
@@ -405,6 +489,15 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
             !security.hasPermission(outsider, SecurityPermissions.BUILD)
                 && !security.hasPermission(outsider, SecurityPermissions.SECURITY),
             "Cancellation compatibility actor has no native BUILD or SECURITY card");
+        if (!openCancellationRestored && openCancellationResumed) {
+            if (!NativeSecurityStationSupport.ready(controller, station)) return false;
+            require(
+                ctx,
+                QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true),
+                "Owner restores safety ON after natural native station readiness");
+            openCancellationRestored = true;
+            return false;
+        }
         if (!openCancellationRestored) {
             ItemStack offControl = ownerTerminal.copy();
             require(
@@ -423,9 +516,9 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
             require(
                 ctx,
                 QuantumControllerRegistry.get(ctx.world())
-                    .isQuantized(X, Y, Z) && QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true),
-                "Owner resumes the supported topology and restores safety ON");
-            openCancellationRestored = true;
+                    .isQuantized(X, Y, Z),
+                "Owner resumes the supported topology; safety waits for native station readiness");
+            openCancellationResumed = true;
             // Observe native availability on a later END tick before claiming an ON authority denial.
             return false;
         }
@@ -513,6 +606,134 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
             hasChat(owner, "gtswn.chat.quantum.security_topology_unsafe"),
             "Unsafe gesture emits the specific topology explanation");
         ctx.event("unsafe_topology_rejected", "No mutation; native original edges retained; chat=" + owner.messages());
+    }
+
+    private void assertUnprivilegedConversionRejected(TestContext ctx) {
+        ItemStack fresh = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+        NBTTagCompound before = fresh.writeToNBT(new NBTTagCompound());
+        outsider.clearMessages();
+        click(ctx, outsider, fresh);
+        require(
+            ctx,
+            !QuantumControllerRegistry.get(ctx.world())
+                .isQuantized(X, Y, Z) && before.equals(fresh.writeToNBT(new NBTTagCompound()))
+                && hasChat(outsider, "gtswn.chat.quantum.manage_permission_required"),
+            "Unprivileged actor cannot first-convert a native secured grid through default OFF");
+    }
+
+    private void assertSecurityStationPlacement(TestContext ctx) {
+        require(
+            ctx,
+            ctx.world()
+                .isAirBlock(X, Y + 1, Z),
+            "Direct security-station placement target is empty");
+        ItemStack placed = AEApi.instance()
+            .definitions()
+            .blocks()
+            .security()
+            .maybeStack(1)
+            .get();
+        owner.inventory.setInventorySlotContents(0, placed);
+        net.minecraftforge.event.entity.player.PlayerInteractEvent event = new net.minecraftforge.event.entity.player.PlayerInteractEvent(
+            owner,
+            net.minecraftforge.event.entity.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,
+            X,
+            Y,
+            Z,
+            1,
+            ctx.world());
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(event);
+        require(
+            ctx,
+            !event.isCanceled() && event.useItem != cpw.mods.fml.common.eventhandler.Event.Result.DENY,
+            "Actual Forge right-click event allows a security station on a quantum controller");
+        owner.theItemInWorldManager.activateBlockOrUseItem(owner, ctx.world(), placed, X, Y, Z, 1, .5f, 1f, .5f);
+        TileEntity result = ctx.world()
+            .getTileEntity(X, Y + 1, Z);
+        if (result instanceof appeng.tile.misc.TileSecurity) placementStation = result;
+        require(
+            ctx,
+            placed.stackSize == 0 && placementStation != null,
+            "Native ItemBlock placement consumes one real station and creates it directly above the quantum controller");
+        remove(ctx, X, Y + 1);
+        placementStation = null;
+        owner.inventory.setInventorySlotContents(0, ownerTerminal);
+    }
+
+    private void assertOpenMigrationRejected(TestContext ctx) {
+        ItemStack open = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+        owner.inventory.setInventorySlotContents(0, open);
+        owner.theItemInWorldManager.activateBlockOrUseItem(owner, ctx.world(), open, X + 8, Y, Z, 1, .5f, .5f, .5f);
+        require(
+            ctx,
+            QuantumControllerRegistry.get(ctx.world())
+                .isQuantized(X + 8, Y, Z) && ItemNetworkQuantumTerminal.isBound(open),
+            "Real no-station first conversion remains usable and OFF");
+        QuantumTerminalAccess.synchronize(owner, open);
+        NBTTagCompound before = open.writeToNBT(new NBTTagCompound());
+        NBTTagList inventory = (NBTTagList) owner.inventory.writeToNBT(new NBTTagList())
+            .copy();
+        IGrid nativeGrid = grid(controller);
+        EnumSet<ForgeDirection> sides = EnumSet.copyOf(proxySides());
+        List<IGridConnection> edges = new ArrayList<>();
+        for (IGridConnection edge : NativeSecurityStationSupport.node(controller)
+            .getConnections()) edges.add(edge);
+        NBTTagCompound registry = new NBTTagCompound(), safety = new NBTTagCompound();
+        QuantumControllerRegistry.get(ctx.world())
+            .writeToNBT(registry);
+        QuantumNetworkSecurityRegistry.get(ctx.world())
+            .writeToNBT(safety);
+        long journal = QuantumMigrationJournal.get(ctx.world())
+            .currentSequence();
+        boolean global = Config.quantumSafetyEnabled;
+        try {
+            for (boolean enabled : new boolean[] { true, false }) {
+                Config.quantumSafetyEnabled = enabled;
+                owner.clearMessages();
+                require(
+                    ctx,
+                    !com.miaokatze.gtswn.common.quantum.QuantumNetworkMigration
+                        .migrate(owner, open, ctx.world(), X, Y, Z),
+                    "OFF-to-OFF unsafe migration rejected; globalSafety=" + enabled);
+                NBTTagCompound afterRegistry = new NBTTagCompound(), afterSafety = new NBTTagCompound();
+                QuantumControllerRegistry.get(ctx.world())
+                    .writeToNBT(afterRegistry);
+                QuantumNetworkSecurityRegistry.get(ctx.world())
+                    .writeToNBT(afterSafety);
+                require(
+                    ctx,
+                    before.equals(open.writeToNBT(new NBTTagCompound())) && registry.equals(afterRegistry)
+                        && safety.equals(afterSafety)
+                        && journal == QuantumMigrationJournal.get(ctx.world())
+                            .currentSequence()
+                        && hasChat(owner, "gtswn.chat.quantum.security_topology_unsafe"),
+                    "Rejected open migration preserves held item, both registries and journal with specific reason");
+                List<IGridConnection> actualEdges = new ArrayList<>();
+                for (IGridConnection edge : NativeSecurityStationSupport.node(controller)
+                    .getConnections()) actualEdges.add(edge);
+                require(
+                    ctx,
+                    inventory.equals(owner.inventory.writeToNBT(new NBTTagList())) && nativeGrid == grid(controller)
+                        && sides.equals(proxySides())
+                        && edges.size() == actualEdges.size()
+                        && edges.containsAll(actualEdges),
+                    "Rejected open migration preserves actual inventory, controller sides, native grid and edge identities");
+            }
+        } finally {
+            Config.quantumSafetyEnabled = global;
+        }
+        owner.setSneaking(true);
+        try {
+            owner.theItemInWorldManager.activateBlockOrUseItem(owner, ctx.world(), open, X + 8, Y, Z, 1, .5f, .5f, .5f);
+        } finally {
+            owner.setSneaking(false);
+        }
+        require(
+            ctx,
+            !QuantumControllerRegistry.get(ctx.world())
+                .isQuantized(X + 8, Y, Z) && !ItemNetworkQuantumTerminal.isBound(open),
+            "Open no-station cancellation remains usable");
+        owner.inventory.setInventorySlotContents(0, ownerTerminal);
     }
 
     private boolean hasGrant(SecurityPermissions permission) {
@@ -693,8 +914,22 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
     public void cleanup(TestContext ctx) {
         if (!started) return;
         try {
+            if (placementStation != null) {
+                require(
+                    ctx,
+                    ctx.world()
+                        .getTileEntity(X, Y + 1, Z) == placementStation,
+                    "Owned placement station was not replaced before cleanup");
+                remove(ctx, X, Y + 1);
+                placementStation = null;
+            }
             QuantumControllerRegistry.get(ctx.world())
                 .dequantize(X, Y, Z);
+            if (migrationSource != null) {
+                QuantumControllerRegistry.get(ctx.world())
+                    .dequantize(X + 8, Y, Z);
+                remove(ctx, X + 8, Y);
+            }
             for (int x = REMOTE_STATION_X; x >= X; x--) remove(ctx, x, Y);
             remove(ctx, X + 1, Y - 1);
             remove(ctx, X + 2, Y - 1);
