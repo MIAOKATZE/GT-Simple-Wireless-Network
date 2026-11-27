@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.assembly;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.InputStreamReader;
@@ -47,13 +48,31 @@ public class MatrixTooltipTest {
                         assertTrue(lines[0].contains("\u00a7e"));
                         assertTrue(lines[1].startsWith("\u00a7f"));
                         assertTrue(lines[1].contains("\u00a7b"));
-                        assertTrue(lines[2].contains(locale.equals("zh_CN") ? "仓室等级" : "Hatch Tier"));
-                        assertTrue(lines[2].contains("LuV"));
-                        assertEquals(messages.getProperty("gtswn.matrix.description.assembly_line"), lines[3]);
-                        assertTrue(lines[3].startsWith("\u00a76\u00a7l["));
-                        assertTrue(lines[3].endsWith("]\u00a7r"));
-                        assertEquals("", lines[4]);
-                        assertTrue(lines[5].contains("\u00a7b"));
+                        assertEquals(
+                            messages.getProperty(
+                                "gtswn.matrix.description.storage." + (mirror ? "mirror" : fluid ? "fluid" : "item")),
+                            lines[2]);
+                        assertTrue(lines[2].startsWith("\u00a7f"));
+                        assertTrue(lines[2].contains(locale.equals("zh_CN") ? "仓室缓存" : "Compartment Buffer"));
+                        assertTrue(lines[2].contains("\u00a7b"));
+                        assertTrue(lines[2].contains("\u00a77"));
+                        if (mirror) {
+                            assertTrue(
+                                lines[2].contains(locale.equals("zh_CN") ? "共享源仓室" : "Shared source compartment"));
+                            assertTrue(lines[2].contains(locale.equals("zh_CN") ? "无独立缓存" : "no independent buffer"));
+                            assertFalse(lines[2].contains("2,147,483,647"));
+                        } else {
+                            assertTrue(lines[2].contains("2,147,483,647"));
+                            assertTrue(
+                                lines[2].contains(fluid ? "\u00a77 L" : locale.equals("zh_CN") ? "个物品" : "items"));
+                        }
+                        assertTrue(lines[3].contains(locale.equals("zh_CN") ? "仓室等级" : "Hatch Tier"));
+                        assertTrue(lines[3].contains("LuV"));
+                        assertEquals(messages.getProperty("gtswn.matrix.description.assembly_line"), lines[4]);
+                        assertTrue(lines[4].startsWith("\u00a76\u00a7l["));
+                        assertTrue(lines[4].endsWith("]\u00a7r"));
+                        assertEquals("", lines[5]);
+                        assertTrue(lines[6].contains("\u00a7b"));
                         assertEquals(DeviceTooltip.addedByLine(), lines[lines.length - 1]);
                     }
             }

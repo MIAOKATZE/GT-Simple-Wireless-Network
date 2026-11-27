@@ -64,6 +64,8 @@ public final class BqProgressRecoveryRegression {
             unrelated(UNLISTED, false);
             mixedUnknown();
             fresh();
+            packSafety();
+            recoverySummary();
             migration(true);
             migration(false);
             partialOnly("checkbox");
@@ -79,6 +81,62 @@ public final class BqProgressRecoveryRegression {
             betterquesting.api2.utils.BQThreadedIO.INSTANCE.shutdown();
             betterquesting.api2.utils.BQThreadedIO.DISK_IO.shutdown();
         }
+    }
+
+    private static void recoverySummary() throws Exception {
+        reset("summary-no-records"); QuestDatabase.INSTANCE.put(QUEST, definition());
+        java.util.Set<UUID> targets = java.util.Collections.singleton(QUEST);
+        com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery.Summary stats =
+            com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery.restore(BQ_Settings.curWorldDir, targets);
+        check("new world summary has no missing-file failures", stats.rebuiltQuests == 1 && stats.scannedFiles() == 0
+            && stats.matchedRecords() == 0 && stats.restoredUsers() == 0 && stats.parseFailures() == 0);
+        seed(QUEST, true); writeProgress("QuestProgress.backup.json"); current().resetUser(PLAYER, true);
+        stats = com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery.restore(BQ_Settings.curWorldDir, targets);
+        check("stale backup is never a recovery source", !current().isComplete(PLAYER) && stats.scannedFiles() == 0);
+        writeWorld(playerFile(), "{malformed"); Map<Path, byte[]> disk = snapshotDisk();
+        stats = com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery.restore(BQ_Settings.curWorldDir, targets);
+        check("parse failure appears once in summary and files stay untouched", stats.scannedFiles() == 1 && stats.parseFailures() == 1 && diskEquals(disk));
+        seed(QUEST, true); writeProgress(playerFile()); current().resetUser(PLAYER, true);
+        stats = com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery.restore(BQ_Settings.curWorldDir, targets);
+        check("native typed UUID progress yields exact recovery summary", stats.scannedFiles() == 1 && stats.matchedRecords() == 1
+            && stats.restoredUsers() == 1 && stats.parseFailures() == 0 && completeAndClaimed(current()));
+        NBTTagCompound root = new NBTTagCompound();
+        NBTTagList entries = QuestDatabase.INSTANCE.writeProgressToNBT(new NBTTagList(), null);
+        NBTTagCompound unrelated = new NBTTagCompound(); unrelated.setInteger("questID", 42); entries.appendTag(unrelated);
+        root.setTag("questProgress", entries);
+        writeWorld(playerFile(), NBTConverter.NBTtoJSON_Compound(root, new JsonObject(), true).toString()); current().resetUser(PLAYER, true);
+        stats = com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery.restore(BQ_Settings.curWorldDir, targets);
+        check("unrelated legacy integer record does not block native UUID recovery", completeAndClaimed(current())
+            && stats.matchedRecords() == 1 && stats.parseFailures() == 0);
+    }
+
+    private static void packSafety() throws Exception {
+        for (String missing : new String[] { "quest.json", "entry.json", "line.json" }) {
+            reset("missing-" + missing); writeResources(); seed(QUEST, true);
+            betterquesting.questing.QuestLine line = new betterquesting.questing.QuestLine();
+            line.put(QUEST, new betterquesting.questing.QuestLineEntry(new NBTTagCompound()));
+            QuestLineDatabase.INSTANCE.put(new UUID(HIGH, 1), line);
+            QuestInstance prior = current();
+            writeWorld("gtswn-injected.json", "{\"version\":\"older\"}");
+            Files.delete(work.resolve("resources/" + missing));
+            BqQuestInjector.inject();
+            check("missing " + missing + " leaves quest, line and old stamp intact", current() == prior
+                && line.get(QUEST) != null && !stampCurrent());
+        }
+        writeResources(); reset("foreign-entry"); seed(QUEST, true); QuestInstance foreign = seed(FOREIGN, true);
+        betterquesting.questing.QuestLine line = new betterquesting.questing.QuestLine();
+        line.put(FOREIGN, new betterquesting.questing.QuestLineEntry(new NBTTagCompound()));
+        QuestLineDatabase.INSTANCE.put(new UUID(HIGH, 1), line); BqQuestInjector.inject();
+        check("foreign quest and entry survive owned-line pruning", QuestDatabase.INSTANCE.get(FOREIGN) == foreign && line.get(FOREIGN) != null);
+        reset("cross-line"); seed(QUEST, true); QuestInstance shared = seed(UNLISTED, true);
+        line = new betterquesting.questing.QuestLine(); line.put(UNLISTED, new betterquesting.questing.QuestLineEntry(new NBTTagCompound()));
+        QuestLineDatabase.INSTANCE.put(new UUID(HIGH, 1), line);
+        betterquesting.questing.QuestLine other = new betterquesting.questing.QuestLine();
+        other.put(UNLISTED, new betterquesting.questing.QuestLineEntry(new NBTTagCompound()));
+        QuestLineDatabase.INSTANCE.put(FOREIGN, other); BqQuestInjector.inject();
+        check("cross-line reference preserves global quest and progress", QuestDatabase.INSTANCE.get(UNLISTED) == shared
+            && shared.isComplete(PLAYER) && line.get(UNLISTED) == null && other.get(UNLISTED) != null);
+        writeResources();
     }
 
     private static void recreate(boolean legacy) throws Exception {

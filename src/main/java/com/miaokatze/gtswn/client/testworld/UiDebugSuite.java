@@ -90,6 +90,7 @@ public final class UiDebugSuite {
             .bus()
             .register(INSTANCE);
         ClientCommandHandler.instance.registerCommand(new CommandUiDebug());
+        EffectsBenchmark.registerIfRequested();
     }
 
     public boolean running() {

@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lPatterns and Compartments§r\nThe whole group shares §136 processing pattern slots§r. Each compartment buffers one material at its own position and accepts §1complete batches§r.\n\n§3§lSwitching Patterns§r\nProcess §1one pattern§r at a time. Switch to another only after §1processing has finished and all remaining materials have been cleared§r.",
+      "desc:8": "§3§lPatterns and Complete Batches§r\nThe whole group shares §136 processing pattern slots§r. Each compartment buffers only one material at its own position. Inputs must arrive as §1complete batches§r of the pattern; repeated materials still occupy separate compartments.\n\n§3§lBuffering and Switching§r\nThe group handles §1one pattern§r at a time and can continue receiving complete batches of that pattern during processing. It switches to another pattern only after §1current processing has finished and all remaining materials have been cleared§r. The buffer is not an extra output; consumed materials do not reappear.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
